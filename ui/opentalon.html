@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>OpenTalon — Cybernetic Precision</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      background: #000;
+      color: #00f0ff;
+      font-family: 'Courier New', monospace;
+      overflow: hidden;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    #canvas-container {
+      position: fixed;
+      inset: 0;
+      z-index: 0;
+    }
+
+    canvas { display: block; }
+
+    /* Scanline overlay */
+    #scanlines {
+      position: fixed;
+      inset: 0;
+      z-index: 1;
+      pointer-events: none;
+      background: repeating-linear-gradient(
+        to bottom,
+        transparent 0px,
+        transparent 2px,
+        rgba(0, 240, 255, 0.015) 2px,
+        rgba(0, 240, 255, 0.015) 4px
+      );
+    }
+
+    /* Vignette */
+    #vignette {
+      position: fixed;
+      inset: 0;
+      z-index: 2;
+      pointer-events: none;
+      background: radial-gradient(ellipse at center,
+        transparent 40%,
+        rgba(0, 0, 0, 0.6) 100%
+      );
+    }
+
+    /* HUD top bar */
+    #hud-top {
+      position: fixed;
+      top: 0;
+      left: 0;
+      right: 0;
+      z-index: 10;
+      padding: 16px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid rgba(0, 240, 255, 0.2);
+      background: linear-gradient(to bottom, rgba(0,0,0,0.8), transparent);
+    }
+
+    #hud-top .logo {
+      font-size: 1.1rem;
+      font-weight: bold;
+      letter-spacing: 0.3em;
+      color: #00f0ff;
+      text-shadow: 0 0 20px #00f0ff, 0 0 40px #00f0ff;
+    }
+
+    #hud-top .nav-links {
+      display: flex;
+      gap: 32px;
+      list-style: none;
+    }
+
+    #hud-top .nav-links a {
+      color: rgba(0, 240, 255, 0.7);
+      text-decoration: none;
+      font-size: 0.75rem;
+      letter-spacing: 0.2em;
+      text-transform: uppercase;
+      transition: color 0.2s, text-shadow 0.2s;
+    }
+
+    #hud-top .nav-links a:hover {
+      color: #00f0ff;
+      text-shadow: 0 0 10px #00f0ff;
+    }
+
+    #hud-top .status {
+      font-size: 0.65rem;
+      letter-spacing: 0.15em;
+      color: rgba(0, 240, 255, 0.5);
+    }
+
+    /* Corner HUD brackets */
+    .hud-corner {
+      position: fixed;
+      z-index: 10;
+      width: 60px;
+      height: 60px;
+      pointer-events: none;
+    }
+
+    .hud-corner.tl { top: 70px; left: 20px; border-top: 1px solid #00f0ff; border-left: 1px solid #00f0ff; }
+    .hud-corner.tr { top: 70px; right: 20px; border-top: 1px solid #00f0ff; border-right: 1px solid #00f0ff; }
+    .hud-corner.bl { bottom: 20px; left: 20px; border-bottom: 1px solid #00f0ff; border-left: 1px solid #00f0ff; }
+    .hud-corner.br { bottom: 20px; right: 20px; border-bottom: 1px solid #00f0ff; border-right: 1px solid #00f0ff; }
+
+    /* Side HUD panels */
+    #hud-left {
+      position: fixed;
+      left: 32px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 10;
+      pointer-events: none;
+    }
+
+    #hud-right {
+      position: fixed;
+      right: 32px;
+      top: 50%;
+      transform: translateY(-50%);
+      z-index: 10;
+      text-align: right;
+      pointer-events: none;
+    }
+
+    .hud-stat {
+      margin: 12px 0;
+      font-size: 0.6rem;
+      letter-spacing: 0.15em;
+      color: rgba(0, 240, 255, 0.5);
+      line-height: 1.6;
+    }
+
+    .hud-stat .label { color: rgba(0, 240, 255, 0.3); }
+    .hud-stat .value { color: rgba(0, 240, 255, 0.8); font-weight: bold; }
+
+    .hud-bar {
+      width: 120px;
+      height: 2px;
+      background: rgba(0, 240, 255, 0.15);
+      margin: 4px 0;
+      position: relative;
+      overflow: hidden;
+    }
+
+    .hud-bar-fill {
+      position: absolute;
+      top: 0; left: 0; bottom: 0;
+      background: #00f0ff;
+      box-shadow: 0 0 6px #00f0ff;
+      animation: bar-pulse 3s ease-in-out infinite;
+    }
+
+    @keyframes bar-pulse {
+      0%, 100% { opacity: 0.7; }
+      50% { opacity: 1; }
+    }
+
+    /* Center hero text */
+    #hero {
+      position: fixed;
+      bottom: 100px;
+      left: 0;
+      right: 0;
+      z-index: 10;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    #hero .domain {
+      font-size: clamp(2.5rem, 6vw, 5rem);
+      font-weight: 900;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      color: #fff;
+      text-shadow:
+        0 0 20px #00f0ff,
+        0 0 60px #00f0ff,
+        0 0 120px rgba(0,240,255,0.4);
+      animation: glow-pulse 4s ease-in-out infinite;
+    }
+
+    #hero .tagline {
+      margin-top: 8px;
+      font-size: clamp(0.6rem, 1.5vw, 0.9rem);
+      letter-spacing: 0.5em;
+      color: rgba(0, 240, 255, 0.6);
+      text-transform: uppercase;
+    }
+
+    @keyframes glow-pulse {
+      0%, 100% { text-shadow: 0 0 20px #00f0ff, 0 0 60px #00f0ff, 0 0 120px rgba(0,240,255,0.4); }
+      50% { text-shadow: 0 0 30px #00f0ff, 0 0 80px #00f0ff, 0 0 160px rgba(0,240,255,0.6), 0 0 200px rgba(0,240,255,0.2); }
+    }
+
+    /* Target reticle */
+    #reticle {
+      position: fixed;
+      z-index: 9;
+      pointer-events: none;
+      width: 80px;
+      height: 80px;
+      transform: translate(-50%, -50%);
+      opacity: 0;
+      transition: opacity 0.3s;
+    }
+
+    #reticle svg { width: 100%; height: 100%; }
+
+    /* CTA button */
+    #cta {
+      position: fixed;
+      bottom: 48px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 10;
+    }
+
+    #cta button {
+      background: transparent;
+      border: 1px solid #00f0ff;
+      color: #00f0ff;
+      font-family: 'Courier New', monospace;
+      font-size: 0.7rem;
+      letter-spacing: 0.3em;
+      text-transform: uppercase;
+      padding: 12px 36px;
+      cursor: pointer;
+      position: relative;
+      overflow: hidden;
+      transition: all 0.3s;
+      box-shadow: 0 0 20px rgba(0,240,255,0.2), inset 0 0 20px rgba(0,240,255,0.05);
+    }
+
+    #cta button::before {
+      content: '';
+      position: absolute;
+      top: 0; left: -100%; width: 100%; height: 100%;
+      background: linear-gradient(90deg, transparent, rgba(0,240,255,0.15), transparent);
+      transition: left 0.5s;
+    }
+
+    #cta button:hover::before { left: 100%; }
+
+    #cta button:hover {
+      background: rgba(0,240,255,0.08);
+      box-shadow: 0 0 40px rgba(0,240,255,0.4), inset 0 0 20px rgba(0,240,255,0.1);
+    }
+
+    /* Crosshair cursor */
+    body { cursor: none; }
+
+    #cursor {
+      position: fixed;
+      width: 20px;
+      height: 20px;
+      pointer-events: none;
+      z-index: 999;
+      transform: translate(-50%, -50%);
+    }
+
+    #cursor::before, #cursor::after {
+      content: '';
+      position: absolute;
+      background: #00f0ff;
+      box-shadow: 0 0 4px #00f0ff;
+    }
+
+    #cursor::before {
+      width: 1px; height: 20px;
+      left: 50%; top: 0;
+      transform: translateX(-50%);
+    }
+
+    #cursor::after {
+      width: 20px; height: 1px;
+      top: 50%; left: 0;
+      transform: translateY(-50%);
+    }
+
+    /* Data stream ticker */
+    #ticker {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      z-index: 10;
+      padding: 6px 32px;
+      border-top: 1px solid rgba(0, 240, 255, 0.15);
+      background: rgba(0, 0, 0, 0.6);
+      font-size: 0.55rem;
+      letter-spacing: 0.15em;
+      color: rgba(0, 240, 255, 0.4);
+      overflow: hidden;
+      white-space: nowrap;
+    }
+
+    #ticker-content {
+      display: inline-block;
+      animation: ticker-scroll 30s linear infinite;
+    }
+
+    @keyframes ticker-scroll {
+      0% { transform: translateX(100vw); }
+      100% { transform: translateX(-100%); }
+    }
+
+    /* Loading overlay */
+    #loading {
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      background: #000;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: opacity 1s ease 0.5s;
+    }
+
+    #loading .load-text {
+      font-size: 0.7rem;
+      letter-spacing: 0.4em;
+      color: rgba(0, 240, 255, 0.7);
+      margin-bottom: 24px;
+      animation: blink 1s step-end infinite;
+    }
+
+    @keyframes blink { 0%, 100% { opacity: 1; } 50% { opacity: 0; } }
+
+    #loading .load-bar-wrap {
+      width: 200px;
+      height: 1px;
+      background: rgba(0, 240, 255, 0.2);
+    }
+
+    #loading .load-bar {
+      height: 100%;
+      background: #00f0ff;
+      box-shadow: 0 0 8px #00f0ff;
+      width: 0;
+      transition: width 2s ease;
+    }
+
+    .fade-out { opacity: 0; pointer-events: none; }
+  </style>
+</head>
+<body>
+
+<!-- Loading screen -->
+<div id="loading">
+  <div class="load-text">INITIALIZING OPENTALON SYSTEMS</div>
+  <div class="load-bar-wrap"><div class="load-bar" id="load-bar"></div></div>
+</div>
+
+<!-- Custom cursor -->
+<div id="cursor"></div>
+
+<!-- 3D canvas -->
+<div id="canvas-container"></div>
+
+<!-- Overlays -->
+<div id="scanlines"></div>
+<div id="vignette"></div>
+
+<!-- HUD corners -->
+<div class="hud-corner tl"></div>
+<div class="hud-corner tr"></div>
+<div class="hud-corner bl"></div>
+<div class="hud-corner br"></div>
+
+<!-- Top HUD bar -->
+<div id="hud-top">
+  <div class="logo">OPEN<span style="color:#ff4060">TALON</span></div>
+  <ul class="nav-links">
+    <li><a href="#">Platform</a></li>
+    <li><a href="#">Technology</a></li>
+    <li><a href="#">Capabilities</a></li>
+    <li><a href="#">Contact</a></li>
+  </ul>
+  <div class="status" id="hud-status">SYS:ONLINE &nbsp;|&nbsp; LOCK:ACQUIRED</div>
+</div>
+
+<!-- Left HUD -->
+<div id="hud-left">
+  <div class="hud-stat">
+    <div class="label">THRUST</div>
+    <div class="value" id="stat-thrust">9,842 m/s</div>
+    <div class="hud-bar"><div class="hud-bar-fill" style="width:94%"></div></div>
+  </div>
+  <div class="hud-stat">
+    <div class="label">ALTITUDE</div>
+    <div class="value" id="stat-alt">31,250 m</div>
+    <div class="hud-bar"><div class="hud-bar-fill" style="width:78%"></div></div>
+  </div>
+  <div class="hud-stat">
+    <div class="label">TALON SPREAD</div>
+    <div class="value">OPEN — 180°</div>
+    <div class="hud-bar"><div class="hud-bar-fill" style="width:100%"></div></div>
+  </div>
+  <div class="hud-stat">
+    <div class="label">SIGNAL LOCK</div>
+    <div class="value" style="color:#00ff88">ACQUIRED</div>
+    <div class="hud-bar"><div class="hud-bar-fill" style="width:100%;background:#00ff88;box-shadow:0 0 6px #00ff88"></div></div>
+  </div>
+</div>
+
+<!-- Right HUD -->
+<div id="hud-right">
+  <div class="hud-stat">
+    <div class="label">PRECISION</div>
+    <div class="value">±0.002 mm</div>
+    <div class="hud-bar" style="margin-left:auto"><div class="hud-bar-fill" style="width:99%"></div></div>
+  </div>
+  <div class="hud-stat">
+    <div class="label">NEURAL SYNC</div>
+    <div class="value" id="stat-neural">98.7%</div>
+    <div class="hud-bar" style="margin-left:auto"><div class="hud-bar-fill" style="width:99%"></div></div>
+  </div>
+  <div class="hud-stat">
+    <div class="label">SUBSYSTEMS</div>
+    <div class="value">12 / 12 ONLINE</div>
+    <div class="hud-bar" style="margin-left:auto"><div class="hud-bar-fill" style="width:100%;background:#00ff88;box-shadow:0 0 6px #00ff88"></div></div>
+  </div>
+  <div class="hud-stat">
+    <div class="label">TARGET</div>
+    <div class="value" style="color:#ff4060">LOCKED</div>
+    <div class="hud-bar" style="margin-left:auto"><div class="hud-bar-fill" style="width:100%;background:#ff4060;box-shadow:0 0 6px #ff4060"></div></div>
+  </div>
+</div>
+
+<!-- Hero text -->
+<div id="hero">
+  <div class="domain">OPEN<span style="color:#ff4060">TALON</span>.COM</div>
+  <div class="tagline">Cybernetic Precision &nbsp;&bull;&nbsp; Apex Technology &nbsp;&bull;&nbsp; Total Dominance</div>
+</div>
+
+<!-- CTA -->
+<div id="cta">
+  <button onclick="void(0)">DEPLOY SYSTEM &nbsp;&#8250;</button>
+</div>
+
+<!-- Target reticle (follows mouse) -->
+<div id="reticle">
+  <svg viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <circle cx="40" cy="40" r="30" stroke="#ff4060" stroke-width="0.5" stroke-dasharray="4 4" opacity="0.6"/>
+    <circle cx="40" cy="40" r="20" stroke="#00f0ff" stroke-width="0.5" opacity="0.8"/>
+    <line x1="40" y1="10" x2="40" y2="20" stroke="#00f0ff" stroke-width="1"/>
+    <line x1="40" y1="60" x2="40" y2="70" stroke="#00f0ff" stroke-width="1"/>
+    <line x1="10" y1="40" x2="20" y2="40" stroke="#00f0ff" stroke-width="1"/>
+    <line x1="60" y1="40" x2="70" y2="40" stroke="#00f0ff" stroke-width="1"/>
+    <circle cx="40" cy="40" r="2" fill="#ff4060"/>
+  </svg>
+</div>
+
+<!-- Ticker -->
+<div id="ticker">
+  <span id="ticker-content">
+    OPENTALON CYBERNETICS &nbsp;///&nbsp; TALON LOCK SYSTEM ONLINE &nbsp;///&nbsp; NEURAL MESH ACTIVE: 12 NODES &nbsp;///&nbsp; SIGNAL PRECISION: 0.002mm &nbsp;///&nbsp; APEX PREDATOR PROTOCOL ENGAGED &nbsp;///&nbsp; SUBSYSTEMS NOMINAL &nbsp;///&nbsp; TELEMETRY STREAM: ACTIVE &nbsp;///&nbsp; DIVE VECTOR CALCULATED &nbsp;///&nbsp; PREY ACQUIRED AT 9.2km &nbsp;///&nbsp; IMPACT FORCE: 41,000 PSI &nbsp;///&nbsp; OPENTALON.COM — CYBERNETIC SUPREMACY &nbsp;///&nbsp;
+  </span>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+(function() {
+  'use strict';
+
+  // ─── Loading sequence ─────────────────────────────────────────────────────
+  const loadEl = document.getElementById('loading');
+  const loadBar = document.getElementById('load-bar');
+  setTimeout(() => { loadBar.style.width = '100%'; }, 100);
+  setTimeout(() => { loadEl.classList.add('fade-out'); }, 2000);
+  setTimeout(() => { loadEl.style.display = 'none'; }, 3100);
+
+  // ─── Custom cursor ────────────────────────────────────────────────────────
+  const cursor = document.getElementById('cursor');
+  const reticle = document.getElementById('reticle');
+  let mx = window.innerWidth / 2, my = window.innerHeight / 2;
+
+  document.addEventListener('mousemove', (e) => {
+    mx = e.clientX; my = e.clientY;
+    cursor.style.left = mx + 'px';
+    cursor.style.top = my + 'px';
+    reticle.style.left = mx + 'px';
+    reticle.style.top = my + 'px';
+    reticle.style.opacity = '0.8';
+  });
+
+  // ─── Three.js scene ───────────────────────────────────────────────────────
+  const container = document.getElementById('canvas-container');
+  const W = window.innerWidth, H = window.innerHeight;
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.2;
+  container.appendChild(renderer.domElement);
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x000308);
+  scene.fog = new THREE.FogExp2(0x000308, 0.018);
+
+  const camera = new THREE.PerspectiveCamera(50, W / H, 0.1, 500);
+  camera.position.set(0, 1.5, 9);
+  camera.lookAt(0, 0, 0);
+
+  // ─── Lighting ─────────────────────────────────────────────────────────────
+  scene.add(new THREE.AmbientLight(0x001122, 0.8));
+
+  const mainLight = new THREE.DirectionalLight(0x00f0ff, 2.5);
+  mainLight.position.set(3, 8, 5);
+  mainLight.castShadow = true;
+  scene.add(mainLight);
+
+  const rimLight = new THREE.DirectionalLight(0xff4060, 1.5);
+  rimLight.position.set(-5, 2, -3);
+  scene.add(rimLight);
+
+  const underLight = new THREE.PointLight(0x00f0ff, 1.5, 15);
+  underLight.position.set(0, -3, 2);
+  scene.add(underLight);
+
+  const topLight = new THREE.PointLight(0xffffff, 0.8, 20);
+  topLight.position.set(0, 10, 0);
+  scene.add(topLight);
+
+  // ─── Materials ────────────────────────────────────────────────────────────
+  const cyberMat = new THREE.MeshStandardMaterial({
+    color: 0x0a0a14,
+    metalness: 0.95,
+    roughness: 0.15,
+    envMapIntensity: 1.5,
+  });
+
+  const accentMat = new THREE.MeshStandardMaterial({
+    color: 0x00f0ff,
+    metalness: 0.7,
+    roughness: 0.05,
+    emissive: 0x00f0ff,
+    emissiveIntensity: 0.6,
+  });
+
+  const glowMat = new THREE.MeshStandardMaterial({
+    color: 0x00f0ff,
+    emissive: 0x00f0ff,
+    emissiveIntensity: 3.0,
+    metalness: 0,
+    roughness: 1,
+  });
+
+  const redGlowMat = new THREE.MeshStandardMaterial({
+    color: 0xff2040,
+    emissive: 0xff2040,
+    emissiveIntensity: 3.0,
+    metalness: 0,
+    roughness: 1,
+  });
+
+  const featherMat = new THREE.MeshStandardMaterial({
+    color: 0x0d0d1a,
+    metalness: 0.9,
+    roughness: 0.2,
+    side: THREE.DoubleSide,
+  });
+
+  // ─── Eagle group ──────────────────────────────────────────────────────────
+  const eagle = new THREE.Group();
+  scene.add(eagle);
+
+  // Helper: add to group
+  function mesh(geo, mat, group) {
+    const m = new THREE.Mesh(geo, mat);
+    m.castShadow = true;
+    m.receiveShadow = false;
+    (group || eagle).add(m);
+    return m;
+  }
+
+  // ── Body ──────────────────────────────────────────────────────────────────
+  const bodyGeo = new THREE.CapsuleGeometry(0.38, 1.1, 12, 24);
+  const body = mesh(bodyGeo, cyberMat);
+  body.rotation.x = 0.55; // diving angle
+  body.position.set(0, 0.2, 0);
+
+  // Chest plate
+  const chestGeo = new THREE.BoxGeometry(0.55, 0.55, 0.18);
+  const chest = mesh(chestGeo, accentMat);
+  chest.position.set(0, 0.28, 0.32);
+  chest.rotation.x = 0.55;
+
+  // Chest glow strip
+  const stripGeo = new THREE.BoxGeometry(0.04, 0.4, 0.04);
+  const strip = mesh(stripGeo, glowMat);
+  strip.position.set(0, 0.28, 0.42);
+  strip.rotation.x = 0.55;
+
+  // ── Head ──────────────────────────────────────────────────────────────────
+  const head = new THREE.Group();
+  eagle.add(head);
+  head.position.set(0, 0.72, 0.44);
+  head.rotation.x = -0.3;
+
+  const headGeo = new THREE.SphereGeometry(0.22, 16, 16);
+  const headMesh = mesh(headGeo, cyberMat, head);
+
+  // Cranial visor
+  const visorGeo = new THREE.BoxGeometry(0.32, 0.1, 0.08);
+  const visor = mesh(visorGeo, accentMat, head);
+  visor.position.set(0, 0.05, 0.18);
+
+  // Eyes — red glowing orbs
+  [-0.09, 0.09].forEach((x) => {
+    const eyeGeo = new THREE.SphereGeometry(0.05, 12, 12);
+    const eye = mesh(eyeGeo, redGlowMat, head);
+    eye.position.set(x, 0.04, 0.2);
+
+    const glowGeo = new THREE.SphereGeometry(0.07, 8, 8);
+    const glow = new THREE.Mesh(glowGeo, new THREE.MeshStandardMaterial({
+      color: 0xff2040, emissive: 0xff2040, emissiveIntensity: 1, transparent: true, opacity: 0.3,
+    }));
+    glow.position.copy(eye.position);
+    head.add(glow);
+  });
+
+  // Beak
+  const beakGeo = new THREE.ConeGeometry(0.06, 0.28, 8);
+  const beak = mesh(beakGeo, accentMat, head);
+  beak.rotation.x = Math.PI / 2;
+  beak.position.set(0, -0.03, 0.34);
+
+  // Beak hook
+  const hookGeo = new THREE.TorusGeometry(0.055, 0.012, 8, 16, Math.PI * 0.6);
+  const hook = mesh(hookGeo, accentMat, head);
+  hook.position.set(0, -0.08, 0.46);
+  hook.rotation.x = -0.5;
+  hook.rotation.z = Math.PI;
+
+  // ── Wings ─────────────────────────────────────────────────────────────────
+  function makeWing(side) {
+    const wingGroup = new THREE.Group();
+    eagle.add(wingGroup);
+    const s = side; // 1 = right, -1 = left
+
+    wingGroup.position.set(0, 0.15, -0.05);
+
+    // Primary wing panel — swept back, angled down for dive
+    const primaryGeo = new THREE.BufferGeometry();
+    const verts = new Float32Array([
+      0,     0,     0,      // root base
+      s*0.3, -0.15, -0.05, // inner mid
+      s*1.8, -0.4,  -0.35, // outer tip
+      s*2.1, -0.55, -0.5,  // far tip
+      s*1.6, 0.05,  -0.6,  // upper sweep
+      s*0.8, 0.1,   -0.3,  // upper inner
+    ]);
+    const indices = [0,1,2, 0,2,3, 0,3,4, 0,4,5];
+    primaryGeo.setAttribute('position', new THREE.BufferAttribute(verts, 3));
+    primaryGeo.setIndex(indices);
+    primaryGeo.computeVertexNormals();
+    const primaryWing = new THREE.Mesh(primaryGeo, featherMat);
+    wingGroup.add(primaryWing);
+
+    // Wing edge glow line
+    const edgePoints = [
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(s*0.8, 0.1, -0.3),
+      new THREE.Vector3(s*1.6, 0.05, -0.6),
+      new THREE.Vector3(s*2.1, -0.55, -0.5),
+      new THREE.Vector3(s*1.8, -0.4, -0.35),
+    ];
+    const edgeCurve = new THREE.CatmullRomCurve3(edgePoints);
+    const edgeGeo = new THREE.TubeGeometry(edgeCurve, 20, 0.008, 4, false);
+    const edgeMesh = new THREE.Mesh(edgeGeo, glowMat);
+    wingGroup.add(edgeMesh);
+
+    // Feather struts (secondary detail)
+    for (let i = 1; i <= 5; i++) {
+      const t = i / 6;
+      const strutGeo = new THREE.CylinderGeometry(0.005, 0.003, 0.5 + t * 0.6, 4);
+      const strut = new THREE.Mesh(strutGeo, accentMat);
+      strut.position.set(s * t * 1.6, -0.2 * t, -0.25 * t);
+      strut.rotation.z = s * (0.3 + t * 0.5);
+      strut.rotation.x = 0.2;
+      wingGroup.add(strut);
+    }
+
+    // Secondary wing fold (alula)
+    const alulaGeo = new THREE.ConeGeometry(0.06, 0.45, 6);
+    const alula = new THREE.Mesh(alulaGeo, featherMat);
+    alula.position.set(s * 0.5, 0.08, -0.18);
+    alula.rotation.z = s * (-0.3);
+    alula.rotation.x = 0.4;
+    wingGroup.add(alula);
+  }
+
+  makeWing(1);
+  makeWing(-1);
+
+  // ── Tail ──────────────────────────────────────────────────────────────────
+  const tailGroup = new THREE.Group();
+  eagle.add(tailGroup);
+  tailGroup.position.set(0, -0.3, -0.65);
+  tailGroup.rotation.x = 0.4;
+
+  for (let i = -2; i <= 2; i++) {
+    const geo = new THREE.BoxGeometry(0.12, 0.02, 0.55);
+    const m = new THREE.Mesh(geo, featherMat);
+    m.position.set(i * 0.1, 0, 0);
+    m.rotation.y = i * 0.1;
+    tailGroup.add(m);
+  }
+
+  // Tail glow
+  const tailEdge = new THREE.Mesh(new THREE.BoxGeometry(0.52, 0.01, 0.015), glowMat);
+  tailEdge.position.set(0, 0, 0.27);
+  tailGroup.add(tailEdge);
+
+  // ── Legs ──────────────────────────────────────────────────────────────────
+  function makeLeg(side) {
+    const legGroup = new THREE.Group();
+    eagle.add(legGroup);
+    legGroup.position.set(side * 0.18, -0.22, 0.25);
+
+    // Upper leg
+    const upperGeo = new THREE.CylinderGeometry(0.055, 0.04, 0.4, 8);
+    const upper = new THREE.Mesh(upperGeo, cyberMat);
+    upper.position.set(0, -0.2, 0);
+    upper.rotation.x = 0.3;
+    legGroup.add(upper);
+
+    // Knee joint
+    const kneeGeo = new THREE.SphereGeometry(0.055, 8, 8);
+    const knee = new THREE.Mesh(kneeGeo, accentMat);
+    knee.position.set(0, -0.42, 0.12);
+    legGroup.add(knee);
+
+    // Lower leg (tarsometatarsus)
+    const lowerGeo = new THREE.CylinderGeometry(0.04, 0.055, 0.5, 8);
+    const lower = new THREE.Mesh(lowerGeo, cyberMat);
+    lower.position.set(0, -0.72, 0.22);
+    lower.rotation.x = -0.6;
+    legGroup.add(lower);
+
+    // Glow ring on ankle
+    const ankleRingGeo = new THREE.TorusGeometry(0.055, 0.01, 6, 16);
+    const ankleRing = new THREE.Mesh(ankleRingGeo, glowMat);
+    ankleRing.position.set(0, -0.95, 0.38);
+    ankleRing.rotation.x = Math.PI / 2;
+    legGroup.add(ankleRing);
+
+    // Talons — OPEN position (spread 180°)
+    makeTalons(legGroup, side, 0, -0.95, 0.38);
+  }
+
+  function makeTalons(group, side, x, y, z) {
+    // 4 talons per foot spread wide open
+    const talonAngles = [-65, -22, 22, 65]; // degrees spread around z-axis
+    const talonLengths = [0.42, 0.55, 0.52, 0.38]; // different lengths
+    const talonCurves = [0.35, 0.4, 0.38, 0.32]; // curvature
+
+    talonAngles.forEach((angleDeg, i) => {
+      const talonGroup = new THREE.Group();
+      group.add(talonGroup);
+      talonGroup.position.set(x, y, z);
+
+      const angle = (angleDeg * Math.PI) / 180;
+      const len = talonLengths[i];
+      const curve = talonCurves[i];
+
+      // Build curved talon using tube + CatmullRom
+      const talonPoints = [];
+      const segments = 10;
+      for (let s = 0; s <= segments; s++) {
+        const t = s / segments;
+        const px = Math.sin(angle) * t * len * 0.7;
+        const py = -t * len * 0.5 - curve * t * t * 0.5;
+        const pz = Math.cos(angle) * t * len * 0.7 + t * 0.12;
+        talonPoints.push(new THREE.Vector3(px, py, pz));
+      }
+
+      const talonCurveObj = new THREE.CatmullRomCurve3(talonPoints);
+      const talonRadii = [];
+      for (let s = 0; s <= 20; s++) {
+        talonRadii.push(0.022 * (1 - (s / 20) * 0.85));
+      }
+
+      const talonGeo = new THREE.TubeGeometry(talonCurveObj, 20, 0.016, 6, false);
+      const talonMesh = new THREE.Mesh(talonGeo, cyberMat);
+      talonGroup.add(talonMesh);
+
+      // Talon tip glow
+      const tipPos = talonPoints[talonPoints.length - 1];
+      const tipGeo = new THREE.SphereGeometry(0.018, 6, 6);
+      const tip = new THREE.Mesh(tipGeo, glowMat);
+      tip.position.copy(tipPos);
+      talonGroup.add(tip);
+
+      // Talon edge highlight
+      const edgeGeo = new THREE.TubeGeometry(talonCurveObj, 20, 0.004, 4, false);
+      const edge = new THREE.Mesh(edgeGeo, accentMat);
+      talonGroup.add(edge);
+
+      // Scute (scale) detail on each talon segment
+      for (let s = 1; s <= 4; s++) {
+        const pt = talonCurveObj.getPoint(s / 5);
+        const scuteGeo = new THREE.BoxGeometry(0.025, 0.008, 0.04);
+        const scute = new THREE.Mesh(scuteGeo, accentMat);
+        scute.position.copy(pt);
+        scute.lookAt(talonCurveObj.getPoint((s + 0.1) / 5));
+        talonGroup.add(scute);
+      }
+    });
+
+    // Rear talon (hallux) — pointing back
+    const halluxGroup = new THREE.Group();
+    group.add(halluxGroup);
+    halluxGroup.position.set(x, y, z);
+
+    const halluxPts = [
+      new THREE.Vector3(0, 0, 0),
+      new THREE.Vector3(0, -0.12, -0.18),
+      new THREE.Vector3(0, -0.22, -0.32),
+    ];
+    const halluxCurve = new THREE.CatmullRomCurve3(halluxPts);
+    const halluxGeo = new THREE.TubeGeometry(halluxCurve, 12, 0.018, 6, false);
+    halluxGroup.add(new THREE.Mesh(halluxGeo, cyberMat));
+
+    const halluxTipGeo = new THREE.SphereGeometry(0.016, 6, 6);
+    const halluxTip = new THREE.Mesh(halluxTipGeo, glowMat);
+    halluxTip.position.copy(halluxPts[2]);
+    halluxGroup.add(halluxTip);
+  }
+
+  makeLeg(1);
+  makeLeg(-1);
+
+  // ── Circuit board detail plates ───────────────────────────────────────────
+  function addCircuitPlate(parent, w, h, px, py, pz, rx, ry) {
+    const geo = new THREE.PlaneGeometry(w, h, 4, 4);
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0x001a2a,
+      metalness: 0.8,
+      roughness: 0.3,
+      emissive: 0x003344,
+      emissiveIntensity: 0.2,
+      side: THREE.DoubleSide,
+    });
+    const plate = new THREE.Mesh(geo, mat);
+    plate.position.set(px, py, pz);
+    plate.rotation.x = rx || 0;
+    plate.rotation.y = ry || 0;
+    parent.add(plate);
+
+    // Circuit lines (glowing)
+    for (let i = 0; i < 3; i++) {
+      const lineGeo = new THREE.BoxGeometry(w * 0.6, 0.005, 0.005);
+      const line = new THREE.Mesh(lineGeo, glowMat);
+      line.position.set(px, py + (i - 1) * h * 0.25, pz + 0.005);
+      line.rotation.x = rx || 0;
+      line.rotation.y = ry || 0;
+      parent.add(line);
+    }
+  }
+
+  addCircuitPlate(eagle, 0.25, 0.35, 0.26, 0.2, 0.28, 0.55, 0.4);
+  addCircuitPlate(eagle, 0.25, 0.35, -0.26, 0.2, 0.28, 0.55, -0.4);
+
+  // ── Eagle initial orientation (diving — head slightly down) ───────────────
+  eagle.rotation.x = -0.15;
+  eagle.position.y = 0.3;
+
+  // ─── Grid floor ───────────────────────────────────────────────────────────
+  const gridHelper = new THREE.GridHelper(30, 40, 0x003344, 0x001122);
+  gridHelper.position.y = -4;
+  scene.add(gridHelper);
+
+  // ─── Particle system (sparks / data streams) ──────────────────────────────
+  const PARTICLE_COUNT = 1200;
+  const partPositions = new Float32Array(PARTICLE_COUNT * 3);
+  const partSpeeds = new Float32Array(PARTICLE_COUNT);
+  const partSizes = new Float32Array(PARTICLE_COUNT);
+
+  for (let i = 0; i < PARTICLE_COUNT; i++) {
+    const r = 8 + Math.random() * 10;
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.random() * Math.PI;
+    partPositions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+    partPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
+    partPositions[i * 3 + 2] = r * Math.cos(phi);
+    partSpeeds[i] = 0.002 + Math.random() * 0.005;
+    partSizes[i] = 1.5 + Math.random() * 3;
+  }
+
+  const partGeo = new THREE.BufferGeometry();
+  partGeo.setAttribute('position', new THREE.BufferAttribute(partPositions, 3));
+  partGeo.setAttribute('size', new THREE.BufferAttribute(partSizes, 1));
+
+  const partMat = new THREE.PointsMaterial({
+    color: 0x00f0ff,
+    size: 0.04,
+    transparent: true,
+    opacity: 0.7,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  const particles = new THREE.Points(partGeo, partMat);
+  scene.add(particles);
+
+  // ─── Speed lines (motion blur streaks) ────────────────────────────────────
+  function makeSpeedLine() {
+    const len = 0.5 + Math.random() * 2.5;
+    const geo = new THREE.BufferGeometry();
+    const x = (Math.random() - 0.5) * 6;
+    const y = (Math.random() - 0.5) * 4;
+    const z = (Math.random() - 0.5) * 2;
+    geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array([
+      x, y, z,
+      x, y - len * 0.1, z + len,
+    ]), 3));
+    const mat = new THREE.LineBasicMaterial({
+      color: 0x00f0ff,
+      transparent: true,
+      opacity: 0.12 + Math.random() * 0.15,
+      blending: THREE.AdditiveBlending,
+    });
+    return new THREE.Line(geo, mat);
+  }
+
+  const speedLines = [];
+  for (let i = 0; i < 60; i++) {
+    const line = makeSpeedLine();
+    scene.add(line);
+    speedLines.push(line);
+  }
+
+  // ─── Mouse interaction ────────────────────────────────────────────────────
+  let targetRotX = 0, targetRotY = 0;
+  let isDragging = false, lastX = 0, lastY = 0;
+  let autoRotate = true;
+  let autoRotateTimer = null;
+
+  document.addEventListener('mousedown', (e) => {
+    isDragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    autoRotate = false;
+    clearTimeout(autoRotateTimer);
+  });
+
+  document.addEventListener('mouseup', () => {
+    isDragging = false;
+    autoRotateTimer = setTimeout(() => { autoRotate = true; }, 3000);
+  });
+
+  document.addEventListener('mousemove', (e) => {
+    if (!isDragging) {
+      // Gentle parallax tilt with mouse
+      const nx = (e.clientX / window.innerWidth - 0.5) * 0.3;
+      const ny = (e.clientY / window.innerHeight - 0.5) * 0.2;
+      targetRotY = nx;
+      targetRotX = -ny * 0.5;
+      return;
+    }
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    targetRotY += dx * 0.005;
+    targetRotX += dy * 0.005;
+    targetRotX = Math.max(-0.6, Math.min(0.6, targetRotX));
+    lastX = e.clientX;
+    lastY = e.clientY;
+  });
+
+  // Touch support
+  let lastTouchX = 0, lastTouchY = 0;
+  document.addEventListener('touchstart', (e) => {
+    lastTouchX = e.touches[0].clientX;
+    lastTouchY = e.touches[0].clientY;
+    autoRotate = false;
+  }, { passive: true });
+
+  document.addEventListener('touchmove', (e) => {
+    const dx = e.touches[0].clientX - lastTouchX;
+    const dy = e.touches[0].clientY - lastTouchY;
+    targetRotY += dx * 0.005;
+    targetRotX += dy * 0.003;
+    lastTouchX = e.touches[0].clientX;
+    lastTouchY = e.touches[0].clientY;
+  }, { passive: true });
+
+  // Scroll zoom
+  document.addEventListener('wheel', (e) => {
+    camera.position.z = Math.max(4, Math.min(16, camera.position.z + e.deltaY * 0.01));
+  }, { passive: true });
+
+  // ─── HUD live stats ───────────────────────────────────────────────────────
+  function randomFlicker(base, variance) {
+    return (base + (Math.random() - 0.5) * variance).toFixed(1);
+  }
+
+  setInterval(() => {
+    document.getElementById('stat-thrust').textContent =
+      (9800 + Math.floor(Math.random() * 80)).toLocaleString() + ' m/s';
+    document.getElementById('stat-alt').textContent =
+      (31000 + Math.floor(Math.random() * 500)).toLocaleString() + ' m';
+    document.getElementById('stat-neural').textContent =
+      randomFlicker(98.7, 0.4) + '%';
+  }, 1500);
+
+  // ─── Animation loop ───────────────────────────────────────────────────────
+  let time = 0;
+  const currentRot = { x: 0, y: 0 };
+
+  function animate() {
+    requestAnimationFrame(animate);
+    time += 0.01;
+
+    // Auto-rotate
+    if (autoRotate) {
+      targetRotY += 0.003;
+    }
+
+    // Smooth camera-driven eagle rotation
+    currentRot.x += (targetRotX - currentRot.x) * 0.06;
+    currentRot.y += (targetRotY - currentRot.y) * 0.06;
+    eagle.rotation.y = currentRot.y;
+    eagle.rotation.x = -0.15 + currentRot.x;
+
+    // Subtle hover bob
+    eagle.position.y = 0.3 + Math.sin(time * 0.8) * 0.06;
+
+    // Wing breathing effect
+    const wingPulse = Math.sin(time * 1.2) * 0.015;
+    eagle.children.forEach((child, i) => {
+      if (child instanceof THREE.Group && i > 1) {
+        child.rotation.z = wingPulse;
+      }
+    });
+
+    // Particle rotation
+    particles.rotation.y += 0.0008;
+    particles.rotation.x += 0.0003;
+
+    // Speed line pulse
+    speedLines.forEach((line, i) => {
+      line.material.opacity = 0.05 + 0.15 * Math.abs(Math.sin(time * 2 + i * 0.3));
+    });
+
+    // Eye glow pulse
+    const eyePulse = 2.5 + Math.sin(time * 3) * 1.5;
+    scene.traverse((obj) => {
+      if (obj.isMesh && obj.material && obj.material.emissive) {
+        const c = obj.material.color;
+        if (c && c.r > 0.8 && c.g < 0.2) {
+          obj.material.emissiveIntensity = eyePulse;
+        }
+      }
+    });
+
+    // Underlight pulse
+    underLight.intensity = 1.0 + Math.sin(time * 1.5) * 0.5;
+    underLight.color.setHSL(0.55 + Math.sin(time * 0.3) * 0.05, 1, 0.5);
+
+    renderer.render(scene, camera);
+  }
+
+  animate();
+
+  // ─── Resize handler ───────────────────────────────────────────────────────
+  window.addEventListener('resize', () => {
+    const W = window.innerWidth, H = window.innerHeight;
+    camera.aspect = W / H;
+    camera.updateProjectionMatrix();
+    renderer.setSize(W, H);
+  });
+
+})();
+</script>
+</body>
+</html>
