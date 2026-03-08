@@ -251,6 +251,10 @@ export RUVIEW_MAC_WIFI_HELPER="$PWD/rust-port/wifi-densepose-rs/target/tools/mac
 
 # Run native macOS Wi-Fi sensing
 ./target/release/sensing-server --source wifi --http-port 3000 --ws-port 3001 --tick-ms 500
+
+# Experimental fallback bridge (explicit, never auto-selected)
+python3 scripts/macos_wifi_bridge.py --interval-ms 100 &
+./target/release/sensing-server --source macos-bridge --http-port 3000 --ws-port 3001 --tick-ms 100
 ```
 
 See [ADR-025](adr/ADR-025-macos-corewlan-wifi-sensing.md) for details.
@@ -478,7 +482,7 @@ The Rust sensing server binary accepts the following flags:
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `--source` | `auto` | Data source: `auto`, `simulate`, `wifi`, `esp32` |
+| `--source` | `auto` | Data source: `auto`, `simulate`, `wifi`, `esp32`, `macos-bridge` |
 | `--http-port` | `8080` | HTTP port for REST API and UI |
 | `--ws-port` | `8765` | WebSocket port |
 | `--udp-port` | `5005` | UDP port for ESP32 CSI frames |
@@ -506,6 +510,10 @@ The Rust sensing server binary accepts the following flags:
 
 # Windows WiFi RSSI
 ./target/release/sensing-server --source wifi --tick-ms 500
+
+# Experimental macOS bridge fallback
+python3 scripts/macos_wifi_bridge.py --interval-ms 100 &
+./target/release/sensing-server --source macos-bridge --tick-ms 100
 
 # Run benchmark
 ./target/release/sensing-server --benchmark

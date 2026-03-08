@@ -83,7 +83,7 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1", env = "SENSING_BIND_ADDR")]
     bind_addr: String,
 
-    /// Data source: auto, wifi, esp32, simulate
+    /// Data source: auto, wifi, esp32, simulate, macos-bridge
     #[arg(long, default_value = "auto")]
     source: String,
 
@@ -148,12 +148,15 @@ struct Args {
     build_index: Option<String>,
 }
 
+const MACOS_BRIDGE_UDP_PORT: u16 = 5006;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum RequestedSource {
     Auto,
     Wifi,
     Esp32,
     Simulate,
+    MacosBridge,
 }
 
 impl RequestedSource {
@@ -163,8 +166,9 @@ impl RequestedSource {
             "wifi" => Ok(Self::Wifi),
             "esp32" => Ok(Self::Esp32),
             "simulate" | "simulated" => Ok(Self::Simulate),
+            "macos-bridge" => Ok(Self::MacosBridge),
             other => Err(format!(
-                "unsupported source '{other}'. Expected one of: auto, wifi, esp32, simulate"
+                "unsupported source '{other}'. Expected one of: auto, wifi, esp32, simulate, macos-bridge"
             )),
         }
     }
@@ -175,6 +179,7 @@ enum ResolvedSource {
     Wifi,
     Esp32,
     Simulate,
+    MacosBridge,
 }
 
 impl ResolvedSource {
@@ -183,6 +188,7 @@ impl ResolvedSource {
             Self::Wifi => "wifi",
             Self::Esp32 => "esp32",
             Self::Simulate => "simulate",
+            Self::MacosBridge => "macos-bridge",
         }
     }
 }
@@ -192,6 +198,22 @@ enum PlatformFlavor {
     Macos,
     Windows,
     Other,
+}
+
+#[derive(Debug, Deserialize)]
+struct MacosBridgeRecord {
+    bridge_kind: String,
+    timestamp: f64,
+    interface: String,
+    ssid: String,
+    bssid: String,
+    bssid_synthetic: bool,
+    rssi: f64,
+    noise: f64,
+    channel: u8,
+    band: String,
+    tx_rate_mbps: f64,
+    is_connected: bool,
 }
 
 // ── Data types ───────────────────────────────────────────────────────────────
@@ -1248,6 +1270,14 @@ fn resolve_explicit_source(
                 "`--source wifi` is only supported on Windows and macOS in this server".to_string(),
             ),
         },
+        RequestedSource::MacosBridge => match platform {
+            PlatformFlavor::Macos => wifi_available
+                .then_some(ResolvedSource::MacosBridge)
+                .ok_or_else(|| {
+                    "`--source macos-bridge` requires a working macOS helper and active Wi-Fi association".to_string()
+                }),
+            _ => Err("`--source macos-bridge` is only supported on macOS".to_string()),
+        },
         RequestedSource::Auto => Err("internal error: auto source must be resolved separately".into()),
     }
 }
@@ -1277,6 +1307,7 @@ async fn resolve_source(args: &Args) -> Result<ResolvedSource, String> {
                     PlatformFlavor::Other => {}
                 },
                 ResolvedSource::Simulate => info!("  No hardware detected, using simulation"),
+                ResolvedSource::MacosBridge => {}
             }
             Ok(resolved)
         }
@@ -1288,8 +1319,76 @@ async fn resolve_source(args: &Args) -> Result<ResolvedSource, String> {
             };
             resolve_explicit_source(requested, platform, wifi_available)
         }
+        RequestedSource::MacosBridge => {
+            if !matches!(platform, PlatformFlavor::Macos) {
+                return Err("`--source macos-bridge` is only supported on macOS".to_string());
+            }
+            if !probe_macos_wifi().await {
+                return Err(
+                    "`--source macos-bridge` requires a working macOS helper and active Wi-Fi association"
+                        .to_string(),
+                );
+            }
+            if !probe_macos_bridge().await {
+                return Err(format!(
+                    "`--source macos-bridge` requires a local NDJSON bridge sender on udp://127.0.0.1:{MACOS_BRIDGE_UDP_PORT}"
+                ));
+            }
+            Ok(ResolvedSource::MacosBridge)
+        }
         other => resolve_explicit_source(other, platform, false),
     }
+}
+
+fn parse_macos_bridge_datagram(buf: &[u8]) -> Result<MacosBridgeRecord, String> {
+    if parse_esp32_frame(buf).is_some() {
+        return Err("macos-bridge expects JSON datagrams, not ESP32 binary frames".to_string());
+    }
+
+    let text = std::str::from_utf8(buf)
+        .map_err(|e| format!("macos-bridge datagram must be UTF-8 JSON: {e}"))?;
+    serde_json::from_str::<MacosBridgeRecord>(text.trim())
+        .map_err(|e| format!("invalid macos-bridge JSON payload: {e}"))
+}
+
+fn macos_bridge_to_observation(record: MacosBridgeRecord) -> Result<BssidObservation, String> {
+    if record.bridge_kind != "connected_rssi" {
+        return Err(format!(
+            "field `bridge_kind` must equal 'connected_rssi'; got '{}'",
+            record.bridge_kind
+        ));
+    }
+    if record.interface.trim().is_empty() {
+        return Err("field `interface` must not be empty".to_string());
+    }
+    if !record.is_connected {
+        return Err("field `is_connected` must be true for macos-bridge records".to_string());
+    }
+    if record.channel == 0 {
+        return Err("field `channel` must be greater than 0".to_string());
+    }
+
+    let band = parse_band_label(&record.band, record.channel)?;
+    let bssid = BssidId::parse(&record.bssid)
+        .map_err(|_| format!("field `bssid` is not a valid MAC address: {}", record.bssid))?;
+    let signal_pct = ((record.rssi + 100.0) * 2.0).clamp(0.0, 100.0);
+    let _ = (
+        record.timestamp,
+        record.bssid_synthetic,
+        record.noise,
+        record.tx_rate_mbps,
+    );
+
+    Ok(BssidObservation {
+        bssid,
+        rssi_dbm: record.rssi,
+        signal_pct,
+        channel: record.channel,
+        band,
+        radio_type: infer_wifi_radio_type(record.channel),
+        ssid: record.ssid,
+        timestamp: Instant::now(),
+    })
 }
 
 async fn scan_with_port<T>(scanner: Arc<T>) -> Result<Vec<BssidObservation>, String>
@@ -1744,6 +1843,83 @@ async fn macos_wifi_task(_state: SharedState, _tick_ms: u64) {
     error!("macOS Wi-Fi task requested on a non-macOS build");
 }
 
+async fn macos_bridge_task(state: SharedState, tick_ms: u64) {
+    let addr = SocketAddr::from(([127, 0, 0, 1], MACOS_BRIDGE_UDP_PORT));
+    let socket = match UdpSocket::bind(addr).await {
+        Ok(socket) => socket,
+        Err(e) => {
+            error!(
+                "Failed to bind macOS bridge UDP port {}: {e}",
+                MACOS_BRIDGE_UDP_PORT
+            );
+            return;
+        }
+    };
+
+    let mut seq: u32 = 0;
+    let mut registry = BssidRegistry::new(8, 16);
+    let mut pipeline = WindowsWifiPipeline::new();
+    let mut buf = vec![0u8; 4096];
+
+    info!(
+        "macOS bridge listener active on udp://127.0.0.1:{} (expected interval ≈ {} ms)",
+        MACOS_BRIDGE_UDP_PORT, tick_ms
+    );
+    state.write().await.source = "wifi-bridge:macos".to_string();
+
+    loop {
+        let (len, peer) =
+            match tokio::time::timeout(Duration::from_secs(5), socket.recv_from(&mut buf)).await {
+                Ok(Ok(result)) => result,
+                Ok(Err(e)) => {
+                    warn!("macOS bridge UDP receive failed: {e}");
+                    continue;
+                }
+                Err(_) => {
+                    warn!(
+                        "macOS bridge listener is waiting for NDJSON packets on udp://127.0.0.1:{}",
+                        MACOS_BRIDGE_UDP_PORT
+                    );
+                    continue;
+                }
+            };
+
+        if !peer.ip().is_loopback() {
+            warn!("Ignoring non-loopback macOS bridge sender: {peer}");
+            continue;
+        }
+
+        let record = match parse_macos_bridge_datagram(&buf[..len]) {
+            Ok(record) => record,
+            Err(e) => {
+                warn!("Rejected macOS bridge payload from {peer}: {e}");
+                continue;
+            }
+        };
+
+        let observation = match macos_bridge_to_observation(record) {
+            Ok(observation) => observation,
+            Err(e) => {
+                warn!("Rejected macOS bridge observation from {peer}: {e}");
+                continue;
+            }
+        };
+
+        seq = seq.wrapping_add(1);
+        publish_multi_bssid_tick(
+            &state,
+            &mut registry,
+            &mut pipeline,
+            vec![observation],
+            seq,
+            tick_ms,
+            "wifi-bridge:macos",
+            Some("wifi-bridge:macos"),
+        )
+        .await;
+    }
+}
+
 /// Probe if Windows WiFi is connected
 async fn probe_windows_wifi() -> bool {
     match tokio::process::Command::new("netsh")
@@ -1769,6 +1945,22 @@ async fn probe_macos_wifi() -> bool {
 #[cfg(not(target_os = "macos"))]
 async fn probe_macos_wifi() -> bool {
     false
+}
+
+async fn probe_macos_bridge() -> bool {
+    let addr = SocketAddr::from(([127, 0, 0, 1], MACOS_BRIDGE_UDP_PORT));
+    match UdpSocket::bind(addr).await {
+        Ok(socket) => {
+            let mut buf = [0u8; 4096];
+            match tokio::time::timeout(Duration::from_secs(2), socket.recv_from(&mut buf)).await {
+                Ok(Ok((len, peer))) if peer.ip().is_loopback() => {
+                    parse_macos_bridge_datagram(&buf[..len]).is_ok()
+                }
+                _ => false,
+            }
+        }
+        Err(_) => false,
+    }
 }
 
 /// Probe if ESP32 is streaming on UDP port
@@ -4119,6 +4311,9 @@ async fn main() {
                 std::process::exit(1);
             }
         }
+        ResolvedSource::MacosBridge => {
+            tokio::spawn(macos_bridge_task(state.clone(), args.tick_ms));
+        }
         ResolvedSource::Simulate => {
             tokio::spawn(simulated_data_task(state.clone(), args.tick_ms));
         }
@@ -4307,4 +4502,40 @@ mod tests {
         assert!(err.contains("only supported on Windows and macOS"));
     }
 
+    #[test]
+    fn bridge_parser_accepts_ndjson_payload() {
+        let payload = br#"{"bridge_kind":"connected_rssi","timestamp":1.0,"interface":"en0","ssid":"Lab","bssid":"aa:bb:cc:dd:ee:ff","bssid_synthetic":false,"rssi":-51.0,"noise":-92.0,"channel":44,"band":"5ghz","tx_rate_mbps":400.0,"is_connected":true}"#;
+        let record = parse_macos_bridge_datagram(payload).expect("bridge payload should parse");
+        let obs = macos_bridge_to_observation(record).expect("bridge record should map");
+
+        assert_eq!(obs.ssid, "Lab");
+        assert_eq!(obs.bssid.to_string(), "aa:bb:cc:dd:ee:ff");
+        assert_eq!(obs.channel, 44);
+        assert_eq!(obs.band, BandType::Band5GHz);
+    }
+
+    #[test]
+    fn bridge_parser_rejects_esp32_frames() {
+        let mut frame = vec![0u8; 22];
+        frame[0..4].copy_from_slice(&0xC511_0001u32.to_le_bytes());
+        frame[4] = 1;
+        frame[5] = 1;
+        frame[6] = 1;
+        frame[8..10].copy_from_slice(&2437u16.to_le_bytes());
+        frame[10..14].copy_from_slice(&1u32.to_le_bytes());
+        frame[20] = 1;
+        frame[21] = 1;
+
+        let err = parse_macos_bridge_datagram(&frame).expect_err("ESP32 binary should be rejected");
+        assert!(err.contains("not ESP32 binary frames"));
+    }
+
+    #[test]
+    fn bridge_parser_rejects_disconnected_records() {
+        let payload = br#"{"bridge_kind":"connected_rssi","timestamp":1.0,"interface":"en0","ssid":"Lab","bssid":"aa:bb:cc:dd:ee:ff","bssid_synthetic":false,"rssi":-51.0,"noise":-92.0,"channel":44,"band":"5ghz","tx_rate_mbps":400.0,"is_connected":false}"#;
+        let record = parse_macos_bridge_datagram(payload).expect("bridge payload should parse");
+        let err = macos_bridge_to_observation(record)
+            .expect_err("disconnected bridge record should be rejected");
+        assert!(err.contains("is_connected"));
+    }
 }

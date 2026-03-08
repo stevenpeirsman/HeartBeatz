@@ -245,6 +245,15 @@ All verification on Mac Mini (M2 Pro, macOS 26.3).
 | Unit: helper not found | `#[test]` with bad path | `WifiScanError::ProcessError` |
 | Integration: real scan | `cargo test` on Mac Mini | Live observations from CoreWLAN |
 
+### 5.2.1 Bridge Fallback
+
+| Test | Command | Expected |
+|------|---------|----------|
+| Bridge CLI validation | `python3 scripts/macos_wifi_bridge.py --help` | Shows helper/host/port/interval arguments |
+| Bridge syntax | `python3 -m py_compile scripts/macos_wifi_bridge.py` | Passes |
+| Bridge startup order | `python3 scripts/macos_wifi_bridge.py --interval-ms 100 &` then `./target/release/sensing-server --source macos-bridge --tick-ms 100` | Server binds and labels source `wifi-bridge:macos` |
+| Bridge payload rejection | Send ESP32 binary or malformed JSON | Server logs rejection and keeps waiting |
+
 ### 5.3 End-to-End
 
 | Step | Command | Verify |
@@ -262,6 +271,7 @@ All verification on Mac Mini (M2 Pro, macOS 26.3).
 - No compiled helper binaries are committed.
 - Public docs describe macOS as RSSI-only presence/coarse-motion sensing, not CSI parity.
 - Helper discovery order is documented as env override, repo-local build output, then `PATH`.
+- `macos-bridge` stays explicit-only and is never auto-selected.
 - PR includes manual macOS QA evidence because CI is Linux-centric.
 
 ### 5.5 Cross-Platform Regression

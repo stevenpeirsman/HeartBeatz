@@ -1614,6 +1614,10 @@ graph TB
 # Start with Windows WiFi RSSI
 ./target/release/sensing-server --source wifi
 
+# Start with the experimental macOS bridge fallback
+python3 scripts/macos_wifi_bridge.py --interval-ms 100 &
+./target/release/sensing-server --source macos-bridge --tick-ms 100
+
 # Run vital sign benchmark
 ./target/release/sensing-server --benchmark
 
@@ -1629,7 +1633,7 @@ graph TB
 
 | Flag | Description |
 |------|-------------|
-| `--source` | Data source: `auto`, `wifi`, `esp32`, `simulate` |
+| `--source` | Data source: `auto`, `wifi`, `esp32`, `simulate`, `macos-bridge` |
 | `--http-port` | HTTP port for UI and REST API (default: 8080) |
 | `--ws-port` | WebSocket port (default: 8765) |
 | `--udp-port` | UDP port for ESP32 CSI frames (default: 5005) |
