@@ -11,6 +11,9 @@
 #define LV_CONF_H
 
 #include <stdint.h>
+#include "sdkconfig.h"
+
+#if CONFIG_DISPLAY_ENABLE
 
 /* ---- Core ---- */
 #define LV_COLOR_DEPTH          16
@@ -90,5 +93,7 @@
 #define LV_USE_PERF_MONITOR     0
 #define LV_USE_MEM_MONITOR      0
 #define LV_SPRINTF_CUSTOM       0
+
+#endif /* CONFIG_DISPLAY_ENABLE */
 
 #endif /* LV_CONF_H */

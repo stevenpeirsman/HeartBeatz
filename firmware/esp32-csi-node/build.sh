@@ -46,7 +46,7 @@ MSYS_NO_PATHCONV=1 docker run --rm \
   -v "${REPO_ROOT}:/project" \
   -w "/project/firmware/esp32-csi-node" \
   espressif/idf:v5.2 bash -c \
-  "rm -rf build sdkconfig && idf.py set-target ${TARGET} && idf.py build"
+  "rm -rf build sdkconfig && idf.py set-target ${TARGET} && idf.py reconfigure && idf.py build"
 
 echo ""
 echo "Build complete! Artifacts are in: firmware/esp32-csi-node/build/"

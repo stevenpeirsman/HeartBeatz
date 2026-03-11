@@ -6,10 +6,9 @@ set(SRCS
 
 set(REQUIRES "")
 
-# ADR-045: AMOLED display support (compile-time optional)
+# ADR-045: AMOLED display support is now in a separate component
 if(CONFIG_DISPLAY_ENABLE)
-    list(APPEND SRCS "display_hal.c" "display_ui.c" "display_task.c")
-    set(REQUIRES esp_lcd esp_lcd_touch lvgl)
+    list(APPEND REQUIRES "display")
 endif()
 
 idf_component_register(
