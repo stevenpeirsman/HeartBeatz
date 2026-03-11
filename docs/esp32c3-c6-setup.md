@@ -20,43 +20,23 @@ This guide covers building, flashing, and deploying the WiFi-DensePose firmware 
 
 ## 2. Building the Firmware
 
-Use Docker to build the firmware for your specific target. This ensures a consistent build environment without installing the full ESP-IDF toolchain.
+Use the provided `build.sh` script to build the firmware using Docker. This ensures a consistent build environment without installing the full ESP-IDF toolchain.
 
-### For ESP32-S3
 ```bash
 # From the repository root
 cd firmware/esp32-csi-node
-cp sdkconfig.defaults.esp32s3 sdkconfig.defaults
 
-MSYS_NO_PATHCONV=1 docker run --rm \
-  -v "$(pwd):/project" -w /project \
-  espressif/idf:v5.2 bash -c \
-  "rm -rf build sdkconfig && idf.py set-target esp32s3 && idf.py build"
+# Build for ESP32-S3
+./build.sh esp32s3
+
+# Build for ESP32-C3
+./build.sh esp32c3
+
+# Build for ESP32-C6
+./build.sh esp32c6
 ```
 
-### For ESP32-C3
-```bash
-# From the repository root
-cd firmware/esp32-csi-node
-cp sdkconfig.defaults.esp32c3 sdkconfig.defaults
-
-MSYS_NO_PATHCONV=1 docker run --rm \
-  -v "$(pwd):/project" -w /project \
-  espressif/idf:v5.2 bash -c \
-  "rm -rf build sdkconfig && idf.py set-target esp32c3 && idf.py build"
-```
-
-### For ESP32-C6
-```bash
-# From the repository root
-cd firmware/esp32-csi-node
-cp sdkconfig.defaults.esp32c6 sdkconfig.defaults
-
-MSYS_NO_PATHCONV=1 docker run --rm \
-  -v "$(pwd):/project" -w /project \
-  espressif/idf:v5.2 bash -c \
-  "rm -rf build sdkconfig && idf.py set-target esp32c6 && idf.py build"
-```
+The script automatically handles the target-specific configuration and runs the build process inside an ESP-IDF Docker container. Build artifacts will be available in the `build/` directory.
 
 ---
 
