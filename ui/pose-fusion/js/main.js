@@ -1,0 +1,295 @@
+/**
+ * WiFi-DensePose — Dual-Modal Pose Estimation Demo
+ *
+ * Main orchestration: video capture → CNN embedding → CSI processing → fusion → rendering
+ */
+
+import { VideoCapture } from './video-capture.js';
+import { CsiSimulator } from './csi-simulator.js';
+import { CnnEmbedder } from './cnn-embedder.js';
+import { FusionEngine } from './fusion-engine.js';
+import { PoseDecoder } from './pose-decoder.js';
+import { CanvasRenderer } from './canvas-renderer.js';
+
+// === State ===
+let mode = 'dual';  // 'dual' | 'video' | 'csi'
+let isRunning = false;
+let isPaused = false;
+let startTime = 0;
+let frameCount = 0;
+let fps = 0;
+let lastFpsTime = 0;
+let confidenceThreshold = 0.3;
+
+// Latency tracking
+const latency = { video: 0, csi: 0, fusion: 0, total: 0 };
+
+// === Components ===
+const videoCapture = new VideoCapture(document.getElementById('webcam'));
+const csiSimulator = new CsiSimulator({ subcarriers: 52, timeWindow: 56 });
+const visualCnn = new CnnEmbedder({ inputSize: 56, embeddingDim: 128, seed: 42 });
+const csiCnn = new CnnEmbedder({ inputSize: 56, embeddingDim: 128, seed: 137 });
+const fusionEngine = new FusionEngine(128);
+const poseDecoder = new PoseDecoder(128);
+const renderer = new CanvasRenderer();
+
+// === Canvas Elements ===
+const skeletonCanvas = document.getElementById('skeleton-canvas');
+const skeletonCtx = skeletonCanvas.getContext('2d');
+const csiCanvas = document.getElementById('csi-canvas');
+const csiCtx = csiCanvas.getContext('2d');
+const embeddingCanvas = document.getElementById('embedding-canvas');
+const embeddingCtx = embeddingCanvas.getContext('2d');
+
+// === UI Elements ===
+const modeSelect = document.getElementById('mode-select');
+const statusDot = document.getElementById('status-dot');
+const statusLabel = document.getElementById('status-label');
+const fpsDisplay = document.getElementById('fps-display');
+const cameraPrompt = document.getElementById('camera-prompt');
+const startCameraBtn = document.getElementById('start-camera-btn');
+const pauseBtn = document.getElementById('pause-btn');
+const confSlider = document.getElementById('confidence-slider');
+const confValue = document.getElementById('confidence-value');
+const wsUrlInput = document.getElementById('ws-url');
+const connectWsBtn = document.getElementById('connect-ws-btn');
+
+// Fusion bar elements
+const videoBar = document.getElementById('video-bar');
+const csiBar = document.getElementById('csi-bar');
+const fusedBar = document.getElementById('fused-bar');
+const videoBarVal = document.getElementById('video-bar-val');
+const csiBarVal = document.getElementById('csi-bar-val');
+const fusedBarVal = document.getElementById('fused-bar-val');
+
+// Latency elements
+const latVideoEl = document.getElementById('lat-video');
+const latCsiEl = document.getElementById('lat-csi');
+const latFusionEl = document.getElementById('lat-fusion');
+const latTotalEl = document.getElementById('lat-total');
+
+// Cross-modal similarity
+const crossModalEl = document.getElementById('cross-modal-sim');
+
+// === Initialize ===
+function init() {
+  resizeCanvases();
+  window.addEventListener('resize', resizeCanvases);
+
+  // Mode change
+  modeSelect.addEventListener('change', (e) => {
+    mode = e.target.value;
+    updateModeUI();
+  });
+
+  // Camera start
+  startCameraBtn.addEventListener('click', startCamera);
+
+  // Pause
+  pauseBtn.addEventListener('click', () => {
+    isPaused = !isPaused;
+    pauseBtn.textContent = isPaused ? '▶ Resume' : '⏸ Pause';
+    pauseBtn.classList.toggle('active', isPaused);
+  });
+
+  // Confidence slider
+  confSlider.addEventListener('input', (e) => {
+    confidenceThreshold = parseFloat(e.target.value);
+    confValue.textContent = confidenceThreshold.toFixed(2);
+  });
+
+  // WebSocket connect
+  connectWsBtn.addEventListener('click', async () => {
+    const url = wsUrlInput.value.trim();
+    if (!url) return;
+    connectWsBtn.textContent = 'Connecting...';
+    const ok = await csiSimulator.connectLive(url);
+    connectWsBtn.textContent = ok ? '✓ Connected' : 'Connect';
+    if (ok) {
+      connectWsBtn.classList.add('active');
+    }
+  });
+
+  // Try to load WASM embedders (non-blocking)
+  visualCnn.tryLoadWasm('./pkg/ruvector_cnn_wasm');
+  csiCnn.tryLoadWasm('./pkg/ruvector_cnn_wasm');
+
+  // Auto-start camera for video/dual modes
+  updateModeUI();
+  startTime = performance.now() / 1000;
+  isRunning = true;
+  requestAnimationFrame(mainLoop);
+}
+
+async function startCamera() {
+  cameraPrompt.style.display = 'none';
+  const ok = await videoCapture.start();
+  if (ok) {
+    statusDot.classList.remove('offline');
+    statusLabel.textContent = 'LIVE';
+    resizeCanvases();
+  } else {
+    cameraPrompt.style.display = 'flex';
+    cameraPrompt.querySelector('p').textContent = 'Camera access denied. Try CSI-only mode.';
+  }
+}
+
+function updateModeUI() {
+  const needsVideo = mode !== 'csi';
+  const needsCsi = mode !== 'video';
+
+  // Show/hide camera prompt
+  if (needsVideo && !videoCapture.isActive) {
+    cameraPrompt.style.display = 'flex';
+  } else {
+    cameraPrompt.style.display = 'none';
+  }
+}
+
+function resizeCanvases() {
+  const videoPanel = document.querySelector('.video-panel');
+  if (videoPanel) {
+    const rect = videoPanel.getBoundingClientRect();
+    skeletonCanvas.width = rect.width;
+    skeletonCanvas.height = rect.height;
+  }
+
+  // CSI canvas
+  csiCanvas.width = csiCanvas.parentElement.clientWidth;
+  csiCanvas.height = 120;
+
+  // Embedding canvas
+  embeddingCanvas.width = embeddingCanvas.parentElement.clientWidth;
+  embeddingCanvas.height = 140;
+}
+
+// === Main Loop ===
+function mainLoop(timestamp) {
+  if (!isRunning) return;
+  requestAnimationFrame(mainLoop);
+
+  if (isPaused) return;
+
+  const elapsed = performance.now() / 1000 - startTime;
+  const totalStart = performance.now();
+
+  // --- Video Pipeline ---
+  let videoEmb = null;
+  let motionRegion = null;
+  if (mode !== 'csi' && videoCapture.isActive) {
+    const t0 = performance.now();
+    const frame = videoCapture.captureFrame(56, 56);
+    if (frame) {
+      videoEmb = visualCnn.extract(frame.rgb, frame.width, frame.height);
+      motionRegion = videoCapture.detectMotionRegion(56, 56);
+
+      // Feed motion to CSI simulator for correlated demo data
+      if (motionRegion.detected) {
+        csiSimulator.updatePersonState(
+          1.0,
+          motionRegion.x + motionRegion.w / 2,
+          motionRegion.y + motionRegion.h / 2,
+          frame.motion
+        );
+      } else {
+        csiSimulator.updatePersonState(0, 0.5, 0.5, 0);
+      }
+
+      fusionEngine.updateConfidence(
+        frame.brightness, frame.motion,
+        0, csiSimulator.isLive || mode === 'dual'
+      );
+    }
+    latency.video = performance.now() - t0;
+  }
+
+  // --- CSI Pipeline ---
+  let csiEmb = null;
+  if (mode !== 'video') {
+    const t0 = performance.now();
+    const csiFrame = csiSimulator.nextFrame(elapsed);
+    const pseudoImage = csiSimulator.buildPseudoImage(56);
+    csiEmb = csiCnn.extract(pseudoImage, 56, 56);
+
+    fusionEngine.updateConfidence(
+      videoCapture.brightnessScore,
+      videoCapture.motionScore,
+      csiFrame.snr,
+      true
+    );
+
+    // Draw CSI heatmap
+    const heatmap = csiSimulator.getHeatmapData();
+    renderer.drawCsiHeatmap(csiCtx, heatmap, csiCanvas.width, csiCanvas.height);
+
+    latency.csi = performance.now() - t0;
+  }
+
+  // --- Fusion ---
+  const t0f = performance.now();
+  const fusedEmb = fusionEngine.fuse(videoEmb, csiEmb, mode);
+  latency.fusion = performance.now() - t0f;
+
+  // --- Pose Decode ---
+  // For CSI-only mode, generate a synthetic motion region from CSI energy
+  if (mode === 'csi' && !motionRegion) {
+    const csiPresence = csiSimulator.personPresence;
+    if (csiPresence > 0.1) {
+      motionRegion = {
+        detected: true,
+        x: 0.25, y: 0.15, w: 0.5, h: 0.7,
+        coverage: csiPresence
+      };
+    }
+  }
+
+  const keypoints = poseDecoder.decode(fusedEmb, motionRegion, elapsed);
+
+  // --- Render Skeleton ---
+  const labelMap = { dual: 'DUAL FUSION', video: 'VIDEO ONLY', csi: 'CSI ONLY' };
+  renderer.drawSkeleton(skeletonCtx, keypoints, skeletonCanvas.width, skeletonCanvas.height, {
+    minConfidence: confidenceThreshold,
+    color: mode === 'csi' ? 'amber' : 'green',
+    label: labelMap[mode]
+  });
+
+  // --- Render Embedding Space ---
+  const embPoints = fusionEngine.getEmbeddingPoints();
+  renderer.drawEmbeddingSpace(embeddingCtx, embPoints, embeddingCanvas.width, embeddingCanvas.height);
+
+  // --- Update UI ---
+  latency.total = performance.now() - totalStart;
+
+  // FPS
+  frameCount++;
+  if (timestamp - lastFpsTime > 500) {
+    fps = Math.round(frameCount * 1000 / (timestamp - lastFpsTime));
+    lastFpsTime = timestamp;
+    frameCount = 0;
+    fpsDisplay.textContent = `${fps} FPS`;
+  }
+
+  // Fusion bars
+  const vc = fusionEngine.videoConfidence;
+  const cc = fusionEngine.csiConfidence;
+  const fc = fusionEngine.fusedConfidence;
+  videoBar.style.width = `${vc * 100}%`;
+  csiBar.style.width = `${cc * 100}%`;
+  fusedBar.style.width = `${fc * 100}%`;
+  videoBarVal.textContent = `${Math.round(vc * 100)}%`;
+  csiBarVal.textContent = `${Math.round(cc * 100)}%`;
+  fusedBarVal.textContent = `${Math.round(fc * 100)}%`;
+
+  // Latency
+  latVideoEl.textContent = `${latency.video.toFixed(1)}ms`;
+  latCsiEl.textContent = `${latency.csi.toFixed(1)}ms`;
+  latFusionEl.textContent = `${latency.fusion.toFixed(1)}ms`;
+  latTotalEl.textContent = `${latency.total.toFixed(1)}ms`;
+
+  // Cross-modal similarity
+  const sim = fusionEngine.getCrossModalSimilarity();
+  crossModalEl.textContent = sim.toFixed(3);
+}
+
+// Boot
+document.addEventListener('DOMContentLoaded', init);
