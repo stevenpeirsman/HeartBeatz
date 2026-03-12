@@ -116,6 +116,18 @@ function init() {
   visualCnn.tryLoadWasm(wasmBase);
   csiCnn.tryLoadWasm(wasmBase);
 
+  // Auto-connect to local sensing server WebSocket if available
+  const defaultWsUrl = 'ws://localhost:8765/ws/sensing';
+  if (wsUrlInput) wsUrlInput.value = defaultWsUrl;
+  csiSimulator.connectLive(defaultWsUrl).then(ok => {
+    if (ok && connectWsBtn) {
+      connectWsBtn.textContent = '✓ Live ESP32';
+      connectWsBtn.classList.add('active');
+      statusLabel.textContent = 'LIVE CSI';
+      statusDot.classList.remove('offline');
+    }
+  });
+
   // Auto-start camera for video/dual modes
   updateModeUI();
   startTime = performance.now() / 1000;
