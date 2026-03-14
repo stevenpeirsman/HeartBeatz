@@ -41,8 +41,9 @@ static inline bool ring_push(const uint8_t *iq, uint16_t len,
                              int8_t rssi, uint8_t channel)
 {
     uint32_t next = (s_ring.head + 1) % EDGE_RING_SLOTS;
-    if (next == s_ring.tail) {
-        return false;  /* Full — drop frame. */
+    if (next == s_ring.tail)
+    {
+        return false; /* Full — drop frame. */
     }
 
     edge_ring_slot_t *slot = &s_ring.slots[s_ring.head];
@@ -61,8 +62,9 @@ static inline bool ring_push(const uint8_t *iq, uint16_t len,
 
 static inline bool ring_pop(edge_ring_slot_t *out)
 {
-    if (s_ring.tail == s_ring.head) {
-        return false;  /* Empty. */
+    if (s_ring.tail == s_ring.head)
+    {
+        return false; /* Empty. */
     }
 
     memcpy(out, &s_ring.slots[s_ring.tail], sizeof(edge_ring_slot_t));
@@ -92,11 +94,11 @@ static void biquad_bandpass_design(edge_biquad_t *bq, float fs,
     float alpha = sinf(w0) * sinhf(logf(2.0f) / 2.0f * bw / sinf(w0));
 
     float a0_inv = 1.0f / (1.0f + alpha);
-    bq->b0 =  alpha * a0_inv;
-    bq->b1 =  0.0f;
+    bq->b0 = alpha * a0_inv;
+    bq->b1 = 0.0f;
     bq->b2 = -alpha * a0_inv;
     bq->a1 = -2.0f * cosf(w0) * a0_inv;
-    bq->a2 =  (1.0f - alpha) * a0_inv;
+    bq->a2 = (1.0f - alpha) * a0_inv;
 
     bq->x1 = bq->x2 = 0.0f;
     bq->y1 = bq->y2 = 0.0f;
@@ -104,8 +106,7 @@ static void biquad_bandpass_design(edge_biquad_t *bq, float fs,
 
 static inline float biquad_process(edge_biquad_t *bq, float x)
 {
-    float y = bq->b0 * x + bq->b1 * bq->x1 + bq->b2 * bq->x2
-            - bq->a1 * bq->y1 - bq->a2 * bq->y2;
+    float y = bq->b0 * x + bq->b1 * bq->x1 + bq->b2 * bq->x2 - bq->a1 * bq->y1 - bq->a2 * bq->y2;
     bq->x2 = bq->x1;
     bq->x1 = x;
     bq->y2 = bq->y1;
@@ -129,8 +130,10 @@ static inline float extract_phase(const uint8_t *iq, uint16_t idx)
 static inline float unwrap_phase(float prev, float curr)
 {
     float diff = curr - prev;
-    if (diff > M_PI)       diff -= 2.0f * M_PI;
-    else if (diff < -M_PI) diff += 2.0f * M_PI;
+    if (diff > M_PI)
+        diff -= 2.0f * M_PI;
+    else if (diff < -M_PI)
+        diff += 2.0f * M_PI;
     return prev + diff;
 }
 
@@ -141,7 +144,7 @@ static inline float unwrap_phase(float prev, float curr)
 static inline void welford_reset(edge_welford_t *w)
 {
     w->mean = 0.0;
-    w->m2   = 0.0;
+    w->m2 = 0.0;
     w->count = 0;
 }
 
@@ -174,30 +177,36 @@ static inline double welford_variance(const edge_welford_t *w)
 static float estimate_bpm_zero_crossing(const float *history, uint16_t len,
                                         float sample_rate)
 {
-    if (len < 4) return 0.0f;
+    if (len < 4)
+        return 0.0f;
 
     uint16_t crossings[128];
     uint16_t n_cross = 0;
 
-    for (uint16_t i = 1; i < len && n_cross < 128; i++) {
-        if (history[i - 1] <= 0.0f && history[i] > 0.0f) {
+    for (uint16_t i = 1; i < len && n_cross < 128; i++)
+    {
+        if (history[i - 1] <= 0.0f && history[i] > 0.0f)
+        {
             crossings[n_cross++] = i;
         }
     }
 
-    if (n_cross < 2) return 0.0f;
+    if (n_cross < 2)
+        return 0.0f;
 
     /* Average period from consecutive crossings. */
     float total_period = 0.0f;
-    for (uint16_t i = 1; i < n_cross; i++) {
+    for (uint16_t i = 1; i < n_cross; i++)
+    {
         total_period += (float)(crossings[i] - crossings[i - 1]);
     }
     float avg_period_samples = total_period / (float)(n_cross - 1);
 
-    if (avg_period_samples < 1.0f) return 0.0f;
+    if (avg_period_samples < 1.0f)
+        return 0.0f;
 
     float freq_hz = sample_rate / avg_period_samples;
-    return freq_hz * 60.0f;  /* Hz to BPM. */
+    return freq_hz * 60.0f; /* Hz to BPM. */
 }
 
 /* ======================================================================
@@ -212,7 +221,7 @@ static edge_welford_t s_subcarrier_var[EDGE_MAX_SUBCARRIERS];
 
 /** Previous phase per subcarrier (for unwrapping). */
 static float s_prev_phase[EDGE_MAX_SUBCARRIERS];
-static bool  s_phase_initialized;
+static bool s_phase_initialized;
 
 /** Top-K subcarrier indices (sorted by variance, descending). */
 static uint8_t s_top_k[EDGE_TOP_K];
@@ -232,24 +241,24 @@ static float s_breathing_filtered[EDGE_PHASE_HISTORY_LEN];
 static float s_heartrate_filtered[EDGE_PHASE_HISTORY_LEN];
 
 /** Latest vitals state. */
-static float    s_breathing_bpm;
-static float    s_heartrate_bpm;
-static float    s_motion_energy;
-static float    s_presence_score;
-static bool     s_presence_detected;
-static bool     s_fall_detected;
-static int8_t   s_latest_rssi;
+static float s_breathing_bpm;
+static float s_heartrate_bpm;
+static float s_motion_energy;
+static float s_presence_score;
+static bool s_presence_detected;
+static bool s_fall_detected;
+static int8_t s_latest_rssi;
 static uint32_t s_frame_count;
 
 /** Previous phase velocity for fall detection (acceleration). */
 static float s_prev_phase_velocity;
 
 /** Adaptive calibration state. */
-static bool     s_calibrated;
-static float    s_calib_sum;
-static float    s_calib_sum_sq;
+static bool s_calibrated;
+static float s_calib_sum;
+static float s_calib_sum_sq;
 static uint32_t s_calib_count;
-static float    s_adaptive_threshold;
+static float s_adaptive_threshold;
 
 /** Last vitals send timestamp. */
 static int64_t s_last_vitals_send_us;
@@ -281,21 +290,27 @@ static volatile bool s_pkt_valid;
 static void update_top_k(uint16_t n_subcarriers)
 {
     uint8_t k = s_cfg.top_k_count;
-    if (k > EDGE_TOP_K) k = EDGE_TOP_K;
-    if (k > n_subcarriers) k = (uint8_t)n_subcarriers;
+    if (k > EDGE_TOP_K)
+        k = EDGE_TOP_K;
+    if (k > n_subcarriers)
+        k = (uint8_t)n_subcarriers;
 
     /* Simple selection: find K largest variances. */
     bool used[EDGE_MAX_SUBCARRIERS];
     memset(used, 0, sizeof(used));
 
-    for (uint8_t ki = 0; ki < k; ki++) {
+    for (uint8_t ki = 0; ki < k; ki++)
+    {
         double best_var = -1.0;
         uint8_t best_idx = 0;
 
-        for (uint16_t sc = 0; sc < n_subcarriers; sc++) {
-            if (!used[sc]) {
+        for (uint16_t sc = 0; sc < n_subcarriers; sc++)
+        {
+            if (!used[sc])
+            {
                 double v = welford_variance(&s_subcarrier_var[sc]);
-                if (v > best_var) {
+                if (v > best_var)
+                {
                     best_var = v;
                     best_idx = (uint8_t)sc;
                 }
@@ -315,25 +330,28 @@ static void update_top_k(uint16_t n_subcarriers)
 
 static void calibration_update(float motion)
 {
-    if (s_calibrated) return;
+    if (s_calibrated)
+        return;
 
     s_calib_sum += motion;
     s_calib_sum_sq += motion * motion;
     s_calib_count++;
 
-    if (s_calib_count >= EDGE_CALIB_FRAMES) {
+    if (s_calib_count >= EDGE_CALIB_FRAMES)
+    {
         float mean = s_calib_sum / (float)s_calib_count;
         float var = (s_calib_sum_sq / (float)s_calib_count) - (mean * mean);
         float sigma = (var > 0.0f) ? sqrtf(var) : 0.001f;
 
         s_adaptive_threshold = mean + EDGE_CALIB_SIGMA_MULT * sigma;
-        if (s_adaptive_threshold < 0.01f) {
+        if (s_adaptive_threshold < 0.01f)
+        {
             s_adaptive_threshold = 0.01f;
         }
 
         s_calibrated = true;
         ESP_LOGI(TAG, "Adaptive calibration complete: mean=%.4f sigma=%.4f "
-                 "threshold=%.4f (from %lu frames)",
+                      "threshold=%.4f (from %lu frames)",
                  mean, sigma, s_adaptive_threshold,
                  (unsigned long)s_calib_count);
     }
@@ -356,13 +374,15 @@ static void calibration_update(float motion)
 static uint16_t delta_compress(const uint8_t *curr, uint16_t len,
                                uint8_t *out, uint16_t out_max)
 {
-    if (!s_has_prev_iq || len != s_prev_iq_len || len == 0) {
+    if (!s_has_prev_iq || len != s_prev_iq_len || len == 0)
+    {
         return 0;
     }
 
     /* XOR delta. */
     uint8_t xor_buf[EDGE_MAX_IQ_BYTES];
-    for (uint16_t i = 0; i < len; i++) {
+    for (uint16_t i = 0; i < len; i++)
+    {
         xor_buf[i] = curr[i] ^ s_prev_iq[i];
     }
 
@@ -371,21 +391,25 @@ static uint16_t delta_compress(const uint8_t *curr, uint16_t len,
     uint16_t out_idx = 0;
 
     uint16_t i = 0;
-    while (i < len) {
+    while (i < len)
+    {
         uint8_t val = xor_buf[i];
         uint16_t run = 1;
-        while (i + run < len && xor_buf[i + run] == val && run < 255) {
+        while (i + run < len && xor_buf[i + run] == val && run < 255)
+        {
             run++;
         }
 
-        if (out_idx + 2 > out_max) return 0;  /* Would overflow. */
+        if (out_idx + 2 > out_max)
+            return 0; /* Would overflow. */
         out[out_idx++] = val;
         out[out_idx++] = (uint8_t)run;
         i += run;
     }
 
     /* Only use compression if it actually saves space. */
-    if (out_idx >= len) {
+    if (out_idx >= len)
+    {
         return 0;
     }
 
@@ -409,7 +433,8 @@ static void send_compressed_frame(const uint8_t *iq_data, uint16_t iq_len,
     uint8_t comp_buf[EDGE_MAX_IQ_BYTES];
     uint16_t comp_len = delta_compress(iq_data, iq_len,
                                        comp_buf, sizeof(comp_buf));
-    if (comp_len == 0) {
+    if (comp_len == 0)
+    {
         /* Compression didn't help — skip sending compressed version. */
         goto store_prev;
     }
@@ -458,16 +483,20 @@ store_prev:
 static void update_multi_person_vitals(const uint8_t *iq_data, uint16_t n_sc,
                                        float sample_rate)
 {
-    if (s_top_k_count < 2) return;
+    if (s_top_k_count < 2)
+        return;
 
     /* Determine number of active persons based on available subcarriers. */
     uint8_t n_persons = s_top_k_count / 2;
-    if (n_persons > EDGE_MAX_PERSONS) n_persons = EDGE_MAX_PERSONS;
-    if (n_persons < 1) n_persons = 1;
+    if (n_persons > EDGE_MAX_PERSONS)
+        n_persons = EDGE_MAX_PERSONS;
+    if (n_persons < 1)
+        n_persons = 1;
 
     uint8_t subs_per_person = s_top_k_count / n_persons;
 
-    for (uint8_t p = 0; p < n_persons; p++) {
+    for (uint8_t p = 0; p < n_persons; p++)
+    {
         edge_person_vitals_t *pv = &s_persons[p];
         pv->active = true;
         pv->subcarrier_idx = s_top_k[p * subs_per_person];
@@ -475,45 +504,49 @@ static void update_multi_person_vitals(const uint8_t *iq_data, uint16_t n_sc,
         /* Average phase across this person's subcarrier group. */
         float avg_phase = 0.0f;
         uint8_t count = 0;
-        for (uint8_t s = 0; s < subs_per_person; s++) {
+        for (uint8_t s = 0; s < subs_per_person; s++)
+        {
             uint8_t sc_idx = s_top_k[p * subs_per_person + s];
-            if (sc_idx < n_sc) {
+            if (sc_idx < n_sc)
+            {
                 avg_phase += extract_phase(iq_data, sc_idx);
                 count++;
             }
         }
-        if (count > 0) avg_phase /= (float)count;
+        if (count > 0)
+            avg_phase /= (float)count;
 
         /* Unwrap and store in history. */
-        if (pv->history_len > 0) {
-            uint16_t prev_idx = (pv->history_idx + EDGE_PHASE_HISTORY_LEN - 1)
-                                % EDGE_PHASE_HISTORY_LEN;
+        if (pv->history_len > 0)
+        {
+            uint16_t prev_idx = (pv->history_idx + EDGE_PHASE_HISTORY_LEN - 1) % EDGE_PHASE_HISTORY_LEN;
             avg_phase = unwrap_phase(pv->phase_history[prev_idx], avg_phase);
         }
 
         pv->phase_history[pv->history_idx] = avg_phase;
         pv->history_idx = (pv->history_idx + 1) % EDGE_PHASE_HISTORY_LEN;
-        if (pv->history_len < EDGE_PHASE_HISTORY_LEN) pv->history_len++;
+        if (pv->history_len < EDGE_PHASE_HISTORY_LEN)
+            pv->history_len++;
 
         /* Filter and estimate BPM. */
         float br_val = biquad_process(&s_person_bq_br[p], avg_phase);
         float hr_val = biquad_process(&s_person_bq_hr[p], avg_phase);
 
-        uint16_t idx = (pv->history_idx + EDGE_PHASE_HISTORY_LEN - 1)
-                       % EDGE_PHASE_HISTORY_LEN;
+        uint16_t idx = (pv->history_idx + EDGE_PHASE_HISTORY_LEN - 1) % EDGE_PHASE_HISTORY_LEN;
         s_person_br_filt[p][idx] = br_val;
         s_person_hr_filt[p][idx] = hr_val;
 
         /* Estimate BPM when we have enough history. */
-        if (pv->history_len >= 64) {
+        if (pv->history_len >= 64)
+        {
             /* Build contiguous buffer for zero-crossing. */
             float br_buf[EDGE_PHASE_HISTORY_LEN];
             float hr_buf[EDGE_PHASE_HISTORY_LEN];
             uint16_t buf_len = pv->history_len;
 
-            for (uint16_t i = 0; i < buf_len; i++) {
-                uint16_t ri = (pv->history_idx + EDGE_PHASE_HISTORY_LEN
-                               - buf_len + i) % EDGE_PHASE_HISTORY_LEN;
+            for (uint16_t i = 0; i < buf_len; i++)
+            {
+                uint16_t ri = (pv->history_idx + EDGE_PHASE_HISTORY_LEN - buf_len + i) % EDGE_PHASE_HISTORY_LEN;
                 br_buf[i] = s_person_br_filt[p][ri];
                 hr_buf[i] = s_person_hr_filt[p][ri];
             }
@@ -522,13 +555,16 @@ static void update_multi_person_vitals(const uint8_t *iq_data, uint16_t n_sc,
             float hr = estimate_bpm_zero_crossing(hr_buf, buf_len, sample_rate);
 
             /* Sanity clamp. */
-            if (br >= 6.0f && br <= 40.0f) pv->breathing_bpm = br;
-            if (hr >= 40.0f && hr <= 180.0f) pv->heartrate_bpm = hr;
+            if (br >= 6.0f && br <= 40.0f)
+                pv->breathing_bpm = br;
+            if (hr >= 40.0f && hr <= 180.0f)
+                pv->heartrate_bpm = hr;
         }
     }
 
     /* Mark remaining persons as inactive. */
-    for (uint8_t p = n_persons; p < EDGE_MAX_PERSONS; p++) {
+    for (uint8_t p = n_persons; p < EDGE_MAX_PERSONS; p++)
+    {
         s_persons[p].active = false;
     }
 }
@@ -550,9 +586,12 @@ static void send_vitals_packet(void)
 #endif
 
     pkt.flags = 0;
-    if (s_presence_detected) pkt.flags |= 0x01;
-    if (s_fall_detected)     pkt.flags |= 0x02;
-    if (s_motion_energy > 0.01f) pkt.flags |= 0x04;
+    if (s_presence_detected)
+        pkt.flags |= 0x01;
+    if (s_fall_detected)
+        pkt.flags |= 0x02;
+    if (s_motion_energy > 0.01f)
+        pkt.flags |= 0x04;
 
     pkt.breathing_rate = (uint16_t)(s_breathing_bpm * 100.0f);
     pkt.heartrate = (uint32_t)(s_heartrate_bpm * 10000.0f);
@@ -560,8 +599,10 @@ static void send_vitals_packet(void)
 
     /* Count active persons. */
     uint8_t n_active = 0;
-    for (uint8_t p = 0; p < EDGE_MAX_PERSONS; p++) {
-        if (s_persons[p].active) n_active++;
+    for (uint8_t p = 0; p < EDGE_MAX_PERSONS; p++)
+    {
+        if (s_persons[p].active)
+            n_active++;
     }
     pkt.n_persons = n_active;
 
@@ -584,7 +625,8 @@ static void send_vitals_packet(void)
 static void process_frame(const edge_ring_slot_t *slot)
 {
     uint16_t n_subcarriers = slot->iq_len / 2;
-    if (n_subcarriers == 0 || n_subcarriers > EDGE_MAX_SUBCARRIERS) return;
+    if (n_subcarriers == 0 || n_subcarriers > EDGE_MAX_SUBCARRIERS)
+        return;
 
     s_frame_count++;
     s_latest_rssi = slot->rssi;
@@ -594,12 +636,16 @@ static void process_frame(const edge_ring_slot_t *slot)
 
     /* --- Step 1-2: Phase extraction + unwrapping per subcarrier --- */
     float phases[EDGE_MAX_SUBCARRIERS];
-    for (uint16_t sc = 0; sc < n_subcarriers; sc++) {
+    for (uint16_t sc = 0; sc < n_subcarriers; sc++)
+    {
         float raw_phase = extract_phase(slot->iq_data, sc);
 
-        if (s_phase_initialized) {
+        if (s_phase_initialized)
+        {
             phases[sc] = unwrap_phase(s_prev_phase[sc], raw_phase);
-        } else {
+        }
+        else
+        {
             phases[sc] = raw_phase;
         }
         s_prev_phase[sc] = phases[sc];
@@ -607,16 +653,19 @@ static void process_frame(const edge_ring_slot_t *slot)
     s_phase_initialized = true;
 
     /* --- Step 3: Welford variance update per subcarrier --- */
-    for (uint16_t sc = 0; sc < n_subcarriers; sc++) {
+    for (uint16_t sc = 0; sc < n_subcarriers; sc++)
+    {
         welford_update(&s_subcarrier_var[sc], (double)phases[sc]);
     }
 
     /* --- Step 4: Top-K selection (every 100 frames to amortize cost) --- */
-    if ((s_frame_count % 100) == 1 || s_top_k_count == 0) {
+    if ((s_frame_count % 100) == 1 || s_top_k_count == 0)
+    {
         update_top_k(n_subcarriers);
     }
 
-    if (s_top_k_count == 0) return;
+    if (s_top_k_count == 0)
+        return;
 
     /* --- Step 5: Phase of primary (highest-variance) subcarrier --- */
     float primary_phase = phases[s_top_k[0]];
@@ -624,27 +673,28 @@ static void process_frame(const edge_ring_slot_t *slot)
     /* Store in phase history ring buffer. */
     s_phase_history[s_history_idx] = primary_phase;
     s_history_idx = (s_history_idx + 1) % EDGE_PHASE_HISTORY_LEN;
-    if (s_history_len < EDGE_PHASE_HISTORY_LEN) s_history_len++;
+    if (s_history_len < EDGE_PHASE_HISTORY_LEN)
+        s_history_len++;
 
     /* --- Step 6: Biquad bandpass filtering --- */
     float br_val = biquad_process(&s_bq_breathing, primary_phase);
     float hr_val = biquad_process(&s_bq_heartrate, primary_phase);
 
-    uint16_t filt_idx = (s_history_idx + EDGE_PHASE_HISTORY_LEN - 1)
-                        % EDGE_PHASE_HISTORY_LEN;
+    uint16_t filt_idx = (s_history_idx + EDGE_PHASE_HISTORY_LEN - 1) % EDGE_PHASE_HISTORY_LEN;
     s_breathing_filtered[filt_idx] = br_val;
     s_heartrate_filtered[filt_idx] = hr_val;
 
     /* --- Step 7: BPM estimation (zero-crossing) --- */
-    if (s_history_len >= 64) {
+    if (s_history_len >= 64)
+    {
         /* Build contiguous buffers from ring. */
         float br_buf[EDGE_PHASE_HISTORY_LEN];
         float hr_buf[EDGE_PHASE_HISTORY_LEN];
         uint16_t buf_len = s_history_len;
 
-        for (uint16_t i = 0; i < buf_len; i++) {
-            uint16_t ri = (s_history_idx + EDGE_PHASE_HISTORY_LEN
-                           - buf_len + i) % EDGE_PHASE_HISTORY_LEN;
+        for (uint16_t i = 0; i < buf_len; i++)
+        {
+            uint16_t ri = (s_history_idx + EDGE_PHASE_HISTORY_LEN - buf_len + i) % EDGE_PHASE_HISTORY_LEN;
             br_buf[i] = s_breathing_filtered[ri];
             hr_buf[i] = s_heartrate_filtered[ri];
         }
@@ -653,44 +703,53 @@ static void process_frame(const edge_ring_slot_t *slot)
         float hr_bpm = estimate_bpm_zero_crossing(hr_buf, buf_len, sample_rate);
 
         /* Sanity clamp: breathing 6-40 BPM, heart rate 40-180 BPM. */
-        if (br_bpm >= 6.0f && br_bpm <= 40.0f) s_breathing_bpm = br_bpm;
-        if (hr_bpm >= 40.0f && hr_bpm <= 180.0f) s_heartrate_bpm = hr_bpm;
+        if (br_bpm >= 6.0f && br_bpm <= 40.0f)
+            s_breathing_bpm = br_bpm;
+        if (hr_bpm >= 40.0f && hr_bpm <= 180.0f)
+            s_heartrate_bpm = hr_bpm;
     }
 
     /* --- Step 8: Motion energy (variance of recent phases) --- */
-    if (s_history_len >= 10) {
+    if (s_history_len >= 10)
+    {
         float sum = 0.0f, sum2 = 0.0f;
         uint16_t window = (s_history_len < 20) ? s_history_len : 20;
-        for (uint16_t i = 0; i < window; i++) {
-            uint16_t ri = (s_history_idx + EDGE_PHASE_HISTORY_LEN
-                           - window + i) % EDGE_PHASE_HISTORY_LEN;
+        for (uint16_t i = 0; i < window; i++)
+        {
+            uint16_t ri = (s_history_idx + EDGE_PHASE_HISTORY_LEN - window + i) % EDGE_PHASE_HISTORY_LEN;
             float v = s_phase_history[ri];
             sum += v;
             sum2 += v * v;
         }
         float mean = sum / (float)window;
         s_motion_energy = (sum2 / (float)window) - (mean * mean);
-        if (s_motion_energy < 0.0f) s_motion_energy = 0.0f;
+        if (s_motion_energy < 0.0f)
+            s_motion_energy = 0.0f;
     }
 
     /* --- Step 9: Presence detection --- */
     s_presence_score = s_motion_energy;
 
     /* Adaptive calibration: learn ambient noise level from first N frames. */
-    if (!s_calibrated && s_cfg.presence_thresh == 0.0f) {
+    if (!s_calibrated && s_cfg.presence_thresh == 0.0f)
+    {
         calibration_update(s_motion_energy);
     }
 
     float threshold = s_cfg.presence_thresh;
-    if (threshold == 0.0f && s_calibrated) {
+    if (threshold == 0.0f && s_calibrated)
+    {
         threshold = s_adaptive_threshold;
-    } else if (threshold == 0.0f) {
-        threshold = 0.05f;  /* Default until calibrated. */
+    }
+    else if (threshold == 0.0f)
+    {
+        threshold = 0.05f; /* Default until calibrated. */
     }
     s_presence_detected = (s_presence_score > threshold);
 
     /* --- Step 10: Fall detection (phase acceleration) --- */
-    if (s_history_len >= 3) {
+    if (s_history_len >= 3)
+    {
         uint16_t i0 = (s_history_idx + EDGE_PHASE_HISTORY_LEN - 1) % EDGE_PHASE_HISTORY_LEN;
         uint16_t i1 = (s_history_idx + EDGE_PHASE_HISTORY_LEN - 2) % EDGE_PHASE_HISTORY_LEN;
         float velocity = s_phase_history[i0] - s_phase_history[i1];
@@ -698,7 +757,8 @@ static void process_frame(const edge_ring_slot_t *slot)
         s_prev_phase_velocity = velocity;
 
         s_fall_detected = (accel > s_cfg.fall_thresh);
-        if (s_fall_detected) {
+        if (s_fall_detected)
+        {
             ESP_LOGW(TAG, "Fall detected! accel=%.4f > thresh=%.4f",
                      accel, s_cfg.fall_thresh);
         }
@@ -708,20 +768,23 @@ static void process_frame(const edge_ring_slot_t *slot)
     update_multi_person_vitals(slot->iq_data, n_subcarriers, sample_rate);
 
     /* --- Step 12: Delta compression --- */
-    if (s_cfg.tier >= 2) {
+    if (s_cfg.tier >= 2)
+    {
         send_compressed_frame(slot->iq_data, slot->iq_len, slot->channel);
     }
 
     /* --- Step 13: Send vitals packet at configured interval --- */
     int64_t now_us = esp_timer_get_time();
     int64_t interval_us = (int64_t)s_cfg.vital_interval_ms * 1000;
-    if ((now_us - s_last_vitals_send_us) >= interval_us) {
+    if ((now_us - s_last_vitals_send_us) >= interval_us)
+    {
         send_vitals_packet();
         s_last_vitals_send_us = now_us;
 
-        if ((s_frame_count % 200) == 0) {
+        if ((s_frame_count % 200) == 0)
+        {
             ESP_LOGI(TAG, "Vitals: br=%.1f hr=%.1f motion=%.4f pres=%s "
-                     "fall=%s persons=%u frames=%lu",
+                          "fall=%s persons=%u frames=%lu",
                      s_breathing_bpm, s_heartrate_bpm, s_motion_energy,
                      s_presence_detected ? "YES" : "no",
                      s_fall_detected ? "YES" : "no",
@@ -731,10 +794,12 @@ static void process_frame(const edge_ring_slot_t *slot)
     }
 
     /* --- Step 14 (ADR-040): Dispatch to WASM modules --- */
-    if (s_cfg.tier >= 2 && s_pkt_valid) {
+    if (s_cfg.tier >= 2 && s_pkt_valid)
+    {
         /* Extract amplitudes from I/Q for WASM host API. */
         float amplitudes[EDGE_MAX_SUBCARRIERS];
-        for (uint16_t sc = 0; sc < n_subcarriers; sc++) {
+        for (uint16_t sc = 0; sc < n_subcarriers; sc++)
+        {
             int8_t i_val = (int8_t)slot->iq_data[sc * 2];
             int8_t q_val = (int8_t)slot->iq_data[sc * 2 + 1];
             amplitudes[sc] = sqrtf((float)(i_val * i_val + q_val * q_val));
@@ -742,7 +807,8 @@ static void process_frame(const edge_ring_slot_t *slot)
 
         /* Build variance array from Welford state. */
         float variances[EDGE_MAX_SUBCARRIERS];
-        for (uint16_t sc = 0; sc < n_subcarriers; sc++) {
+        for (uint16_t sc = 0; sc < n_subcarriers; sc++)
+        {
             variances[sc] = (float)welford_variance(&s_subcarrier_var[sc]);
         }
 
@@ -764,12 +830,16 @@ static void edge_task(void *arg)
 
     edge_ring_slot_t slot;
 
-    while (1) {
-        if (ring_pop(&slot)) {
+    while (1)
+    {
+        if (ring_pop(&slot))
+        {
             process_frame(&slot);
-        } else {
+        }
+        else
+        {
             /* No frames available — yield briefly. */
-            vTaskDelay(pdMS_TO_TICKS(1));
+            vTaskDelay(1);
         }
     }
 }
@@ -786,7 +856,8 @@ bool edge_enqueue_csi(const uint8_t *iq_data, uint16_t iq_len,
 
 bool edge_get_vitals(edge_vitals_pkt_t *pkt)
 {
-    if (!s_pkt_valid || pkt == NULL) return false;
+    if (!s_pkt_valid || pkt == NULL)
+        return false;
     memcpy(pkt, (const void *)&s_latest_pkt, sizeof(edge_vitals_pkt_t));
     return true;
 }
@@ -794,33 +865,43 @@ bool edge_get_vitals(edge_vitals_pkt_t *pkt)
 void edge_get_multi_person(edge_person_vitals_t *persons, uint8_t *n_active)
 {
     uint8_t active = 0;
-    for (uint8_t p = 0; p < EDGE_MAX_PERSONS; p++) {
-        if (persons) persons[p] = s_persons[p];
-        if (s_persons[p].active) active++;
+    for (uint8_t p = 0; p < EDGE_MAX_PERSONS; p++)
+    {
+        if (persons)
+            persons[p] = s_persons[p];
+        if (s_persons[p].active)
+            active++;
     }
-    if (n_active) *n_active = active;
+    if (n_active)
+        *n_active = active;
 }
 
 void edge_get_phase_history(const float **out_buf, uint16_t *out_len,
                             uint16_t *out_idx)
 {
-    if (out_buf) *out_buf = s_phase_history;
-    if (out_len) *out_len = s_history_len;
-    if (out_idx) *out_idx = s_history_idx;
+    if (out_buf)
+        *out_buf = s_phase_history;
+    if (out_len)
+        *out_len = s_history_len;
+    if (out_idx)
+        *out_idx = s_history_idx;
 }
 
 void edge_get_variances(float *out_variances, uint16_t n_subcarriers)
 {
-    if (out_variances == NULL) return;
+    if (out_variances == NULL)
+        return;
     uint16_t n = (n_subcarriers > EDGE_MAX_SUBCARRIERS) ? EDGE_MAX_SUBCARRIERS : n_subcarriers;
-    for (uint16_t i = 0; i < n; i++) {
+    for (uint16_t i = 0; i < n; i++)
+    {
         out_variances[i] = (float)welford_variance(&s_subcarrier_var[i]);
     }
 }
 
 esp_err_t edge_processing_init(const edge_config_t *cfg)
 {
-    if (cfg == NULL) {
+    if (cfg == NULL)
+    {
         ESP_LOGE(TAG, "edge_processing_init: cfg is NULL");
         return ESP_ERR_INVALID_ARG;
     }
@@ -829,7 +910,7 @@ esp_err_t edge_processing_init(const edge_config_t *cfg)
     s_cfg = *cfg;
 
     ESP_LOGI(TAG, "Initializing edge processing (tier=%u, top_k=%u, "
-             "vital_interval=%ums, presence_thresh=%.3f)",
+                  "vital_interval=%ums, presence_thresh=%.3f)",
              s_cfg.tier, s_cfg.top_k_count,
              s_cfg.vital_interval_ms, s_cfg.presence_thresh);
 
@@ -864,7 +945,8 @@ esp_err_t edge_processing_init(const edge_config_t *cfg)
 
     /* Reset multi-person state. */
     memset(s_persons, 0, sizeof(s_persons));
-    for (uint8_t p = 0; p < EDGE_MAX_PERSONS; p++) {
+    for (uint8_t p = 0; p < EDGE_MAX_PERSONS; p++)
+    {
         s_persons[p].active = false;
     }
 
@@ -875,12 +957,14 @@ esp_err_t edge_processing_init(const edge_config_t *cfg)
     biquad_bandpass_design(&s_bq_heartrate, fs, 0.8f, 2.0f);
 
     /* Design per-person filters. */
-    for (uint8_t p = 0; p < EDGE_MAX_PERSONS; p++) {
+    for (uint8_t p = 0; p < EDGE_MAX_PERSONS; p++)
+    {
         biquad_bandpass_design(&s_person_bq_br[p], fs, 0.1f, 0.5f);
         biquad_bandpass_design(&s_person_bq_hr[p], fs, 0.8f, 2.0f);
     }
 
-    if (s_cfg.tier == 0) {
+    if (s_cfg.tier == 0)
+    {
         ESP_LOGI(TAG, "Edge tier 0: raw passthrough (no DSP task)");
         return ESP_OK;
     }
@@ -889,14 +973,15 @@ esp_err_t edge_processing_init(const edge_config_t *cfg)
     BaseType_t ret = xTaskCreatePinnedToCore(
         edge_task,
         "edge_dsp",
-        8192,       /* 8 KB stack — sufficient for DSP pipeline. */
+        8192, /* 8 KB stack — sufficient for DSP pipeline. */
         NULL,
-        5,          /* Priority 5 — above idle, below WiFi. */
+        5, /* Priority 5 — above idle, below WiFi. */
         NULL,
-        1           /* Pin to Core 1. */
+        1 /* Pin to Core 1. */
     );
 
-    if (ret != pdPASS) {
+    if (ret != pdPASS)
+    {
         ESP_LOGE(TAG, "Failed to create edge DSP task");
         return ESP_ERR_NO_MEM;
     }
