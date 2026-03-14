@@ -7,6 +7,9 @@ on:
       - 'scripts/qemu-esp32s3-test.sh'
       - 'scripts/validate_qemu_output.py'
       - 'scripts/generate_nvs_matrix.py'
+      - 'scripts/qemu_swarm.py'
+      - 'scripts/swarm_health.py'
+      - 'scripts/swarm_presets/**'
       - '.github/workflows/firmware-qemu.yml'
   pull_request:
     paths:
@@ -14,6 +17,9 @@ on:
       - 'scripts/qemu-esp32s3-test.sh'
       - 'scripts/validate_qemu_output.py'
       - 'scripts/generate_nvs_matrix.py'
+      - 'scripts/qemu_swarm.py'
+      - 'scripts/swarm_health.py'
+      - 'scripts/swarm_presets/**'
       - '.github/workflows/firmware-qemu.yml'
 
 env:
@@ -284,3 +290,60 @@ jobs:
             fi
             echo "  OK: $(basename $f) ($SIZE bytes)"
           done
+
+  # ---------------------------------------------------------------------------
+  # ADR-062: QEMU Swarm Configurator Test
+  #
+  # Runs a lightweight 3-node swarm (ci_matrix preset) under QEMU to validate
+  # multi-node orchestration, TDM slot coordination, and swarm-level health
+  # assertions. Uses the pre-built QEMU binary from the build-qemu job and the
+  # firmware built by qemu-test.
+  #
+  # The CI runner is non-root, so TAP bridge networking is unavailable.
+  # The orchestrator (qemu_swarm.py) detects this and falls back to SLIRP
+  # user-mode networking, which is sufficient for the ci_matrix preset.
+  # ---------------------------------------------------------------------------
+  swarm-test:
+    name: Swarm Test (ADR-062)
+    needs: [build-qemu, qemu-test]
+    runs-on: ubuntu-latest
+    container:
+      image: espressif/idf:v5.4
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Download QEMU artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: qemu-esp32
+          path: ${{ github.workspace }}/qemu-build
+
+      - name: Make QEMU executable
+        run: chmod +x ${{ github.workspace }}/qemu-build/bin/qemu-system-xtensa
+
+      - name: Download firmware build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: qemu-logs-default
+          path: ${{ github.workspace }}/firmware-artifacts
+
+      - name: Install Python dependencies
+        run: pip install pyyaml esptool esp-idf-nvs-partition-gen
+
+      - name: Run swarm smoke test
+        run: |
+          python3 scripts/qemu_swarm.py --preset ci_matrix \
+            --qemu-path ${{ github.workspace }}/qemu-build/bin/qemu-system-xtensa \
+            --skip-build \
+            --output-dir build/swarm-results
+        timeout-minutes: 5
+
+      - name: Upload swarm results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: swarm-results
+          path: |
+            build/swarm-results/
+          retention-days: 14
