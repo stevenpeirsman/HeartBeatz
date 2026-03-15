@@ -134,6 +134,7 @@ jobs:
 
       - name: Generate NVS matrix
         run: |
+          . $IDF_PATH/export.sh
           python3 scripts/generate_nvs_matrix.py \
             --output-dir firmware/esp32-csi-node/build/nvs_matrix \
             --only ${{ matrix.nvs_config }}
