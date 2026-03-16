@@ -55,6 +55,9 @@ typedef struct {
     uint8_t  csi_channel;                    /**< Explicit CSI channel override (0 = auto-detect). */
     uint8_t  filter_mac[6];                  /**< MAC address to filter CSI frames. */
     uint8_t  filter_mac_set;                 /**< 1 if filter_mac was loaded from NVS. */
+
+    /* Generic Utility Settings */
+    uint8_t  status_led;                     /**< 1 to enable the RGB status LED, 0 to disable. */
 } nvs_config_t;
 
 /**
