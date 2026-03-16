@@ -559,7 +559,8 @@ export const Sensing: React.FC = () => {
               >
                 <option value="simulate">Simulate</option>
                 <option value="esp32">ESP32 (Real)</option>
-                <option value="wifi">WiFi (RSSI)</option>
+                <option value="wifi">WiFi (RSSI — Windows)</option>
+                <option value="linux">WiFi (RSSI — Linux)</option>
                 <option value="auto">Auto Detect</option>
               </select>
             </div>

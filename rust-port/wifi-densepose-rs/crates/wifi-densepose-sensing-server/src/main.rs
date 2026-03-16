@@ -81,9 +81,14 @@ struct Args {
     #[arg(long, default_value = "127.0.0.1", env = "SENSING_BIND_ADDR")]
     bind_addr: String,
 
-    /// Data source: auto, wifi, esp32, simulate
+    /// Data source: auto, wifi, linux, esp32, simulate
     #[arg(long, default_value = "auto")]
     source: String,
+
+    /// Wireless interface for Linux WiFi RSSI mode (e.g. wlan0, wlp0s20f3).
+    /// Used when --source is "linux" or auto-detected on Linux.
+    #[arg(long, default_value = "wlan0", env = "WIFI_INTERFACE")]
+    wifi_interface: String,
 
     /// Run vital sign detection benchmark (1000 frames) and exit
     #[arg(long)]
@@ -1455,6 +1460,216 @@ async fn probe_esp32(port: u16) -> bool {
             }
         }
         Err(_) => false,
+    }
+}
+
+// ── Linux WiFi RSSI collector ────────────────────────────────────────────────
+
+/// Parse `iw dev <iface> link` output for RSSI, signal, and SSID.
+///
+/// Example output:
+/// ```text
+/// Connected to aa:bb:cc:dd:ee:ff (on wlp0s20f3)
+///     SSID: MyNetwork
+///     freq: 5180
+///     signal: -52 dBm
+///     ...
+/// ```
+///
+/// Returns `None` if not connected.
+fn parse_iw_link_output(output: &str) -> Option<(f64, f64, String)> {
+    // "Not connected." is printed when the interface has no association.
+    if output.contains("Not connected") {
+        return None;
+    }
+
+    let mut rssi: Option<f64> = None;
+    let mut ssid: Option<String> = None;
+
+    for line in output.lines() {
+        let trimmed = line.trim();
+        if let Some(rest) = trimmed.strip_prefix("SSID:") {
+            ssid = Some(rest.trim().to_owned());
+        } else if let Some(rest) = trimmed.strip_prefix("signal:") {
+            // "signal: -52 dBm" or "signal: -52.00 dBm"
+            let num_part = rest.trim().split_whitespace().next().unwrap_or("");
+            rssi = num_part.parse().ok();
+        }
+    }
+
+    let rssi_dbm = rssi?;
+    // Convert dBm to signal percentage: -100 dBm = 0%, -30 dBm = 100%
+    let signal_pct = ((rssi_dbm + 100.0) / 70.0 * 100.0).clamp(0.0, 100.0);
+    let ssid = ssid.unwrap_or_else(|| "Unknown".into());
+
+    Some((rssi_dbm, signal_pct, ssid))
+}
+
+/// Probe whether a Linux WiFi interface is connected.
+async fn probe_linux_wifi(interface: &str) -> bool {
+    match tokio::process::Command::new("iw")
+        .args(["dev", interface, "link"])
+        .output()
+        .await
+    {
+        Ok(o) => {
+            let out = String::from_utf8_lossy(&o.stdout);
+            parse_iw_link_output(&out).is_some()
+        }
+        Err(_) => false,
+    }
+}
+
+/// Background task that polls Linux WiFi RSSI via `iw dev <iface> link`.
+///
+/// This is the Linux counterpart to [`windows_wifi_task`].  It does **not**
+/// require root — `iw dev <iface> link` reads the currently associated AP's
+/// signal strength without triggering a scan.
+async fn linux_wifi_task(state: SharedState, tick_ms: u64, interface: String) {
+    let mut interval = tokio::time::interval(Duration::from_millis(tick_ms));
+    let mut seq: u32 = 0;
+
+    info!(
+        "Linux WiFi RSSI pipeline active (tick={}ms, interface={})",
+        tick_ms, interface
+    );
+
+    loop {
+        interval.tick().await;
+        seq += 1;
+
+        // Run `iw dev <iface> link` via spawn_blocking (sync I/O).
+        let iface = interface.clone();
+        let link_result = tokio::task::spawn_blocking(move || {
+            let output = std::process::Command::new("iw")
+                .args(["dev", &iface, "link"])
+                .output()
+                .map_err(|e| format!("iw link failed: {e}"))?;
+
+            let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+            Ok::<String, String>(stdout)
+        })
+        .await;
+
+        let stdout = match link_result {
+            Ok(Ok(s)) => s,
+            Ok(Err(e)) => {
+                warn!("Linux WiFi poll error: {e}");
+                continue;
+            }
+            Err(join_err) => {
+                error!("spawn_blocking panicked: {join_err}");
+                continue;
+            }
+        };
+
+        let (rssi_dbm, signal_pct, ssid) = match parse_iw_link_output(&stdout) {
+            Some(v) => v,
+            None => {
+                debug!("Linux WiFi: not connected to any AP");
+                continue;
+            }
+        };
+
+        let frame = Esp32Frame {
+            magic: 0xC511_0001,
+            node_id: 0,
+            n_antennas: 1,
+            n_subcarriers: 1,
+            freq_mhz: 2437,
+            sequence: seq,
+            rssi: rssi_dbm.clamp(-128.0, 127.0) as i8,
+            noise_floor: -90,
+            amplitudes: vec![signal_pct],
+            phases: vec![0.0],
+        };
+
+        let mut s = state.write().await;
+
+        // Update frame history before extracting features.
+        s.frame_history.push_back(frame.amplitudes.clone());
+        if s.frame_history.len() > FRAME_HISTORY_CAPACITY {
+            s.frame_history.pop_front();
+        }
+
+        let sample_rate_hz = 1000.0 / tick_ms as f64;
+        let (features, mut classification, breathing_rate_hz, sub_variances, raw_motion) =
+            extract_features_from_frame(&frame, &s.frame_history, sample_rate_hz);
+        smooth_and_classify(&mut s, &mut classification, raw_motion);
+        adaptive_override(&s, &features, &mut classification);
+
+        s.source = format!("linux:{ssid}");
+        s.rssi_history.push_back(rssi_dbm);
+        if s.rssi_history.len() > 60 {
+            s.rssi_history.pop_front();
+        }
+
+        s.tick += 1;
+        let tick = s.tick;
+
+        let motion_score = if classification.motion_level == "active" {
+            0.8
+        } else if classification.motion_level == "present_still" {
+            0.3
+        } else {
+            0.05
+        };
+
+        let raw_vitals = s.vital_detector.process_frame(&frame.amplitudes, &frame.phases);
+        let vitals = smooth_vitals(&mut s, &raw_vitals);
+        s.latest_vitals = vitals.clone();
+
+        let feat_variance = features.variance;
+
+        // Multi-person estimation with temporal smoothing (EMA α=0.15).
+        let raw_score = compute_person_score(&features);
+        s.smoothed_person_score = s.smoothed_person_score * 0.85 + raw_score * 0.15;
+        let est_persons = if classification.presence {
+            score_to_person_count(s.smoothed_person_score)
+        } else {
+            0
+        };
+
+        let mut update = SensingUpdate {
+            msg_type: "sensing_update".to_string(),
+            timestamp: chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
+            source: format!("linux:{ssid}"),
+            tick,
+            nodes: vec![NodeInfo {
+                node_id: 0,
+                rssi_dbm,
+                position: [0.0, 0.0, 0.0],
+                amplitude: vec![signal_pct],
+                subcarrier_count: 1,
+            }],
+            features,
+            classification,
+            signal_field: generate_signal_field(
+                rssi_dbm, motion_score, breathing_rate_hz,
+                feat_variance.min(1.0), &sub_variances,
+            ),
+            vital_signs: Some(vitals),
+            enhanced_motion: None,
+            enhanced_breathing: None,
+            posture: None,
+            signal_quality_score: None,
+            quality_verdict: None,
+            bssid_count: None,
+            pose_keypoints: None,
+            model_status: None,
+            persons: None,
+            estimated_persons: if est_persons > 0 { Some(est_persons) } else { None },
+        };
+
+        let persons = derive_pose_from_sensing(&update);
+        if !persons.is_empty() {
+            update.persons = Some(persons);
+        }
+
+        if let Ok(json) = serde_json::to_string(&update) {
+            let _ = s.tx.send(json);
+        }
+        s.latest_update = Some(update);
     }
 }
 
@@ -3468,6 +3683,9 @@ async fn main() {
             } else if probe_windows_wifi().await {
                 info!("  Windows WiFi detected");
                 "wifi"
+            } else if probe_linux_wifi(&args.wifi_interface).await {
+                info!("  Linux WiFi detected on {}", args.wifi_interface);
+                "linux"
             } else {
                 info!("  No hardware detected, using simulation");
                 "simulate"
@@ -3619,6 +3837,9 @@ async fn main() {
         "wifi" => {
             tokio::spawn(windows_wifi_task(state.clone(), args.tick_ms));
         }
+        "linux" => {
+            tokio::spawn(linux_wifi_task(state.clone(), args.tick_ms, args.wifi_interface.clone()));
+        }
         _ => {
             tokio::spawn(simulated_data_task(state.clone(), args.tick_ms));
         }
@@ -3762,4 +3983,58 @@ async fn main() {
     }
 
     info!("Server shut down cleanly");
+}
+
+// ── Tests ────────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_iw_link_connected() {
+        let output = "\
+Connected to aa:bb:cc:dd:ee:ff (on wlp0s20f3)
+\tSSID: MyNetwork
+\tfreq: 5180
+\tRX: 123456 bytes (1234 packets)
+\tTX: 654321 bytes (4321 packets)
+\tsignal: -52 dBm
+\ttx bitrate: 866.7 MBit/s VHT-MCS 9 80MHz short GI VHT-NSS 2
+";
+        let (rssi, signal, ssid) = parse_iw_link_output(output).unwrap();
+        assert!((rssi - (-52.0)).abs() < f64::EPSILON);
+        assert!(signal > 0.0 && signal <= 100.0);
+        assert_eq!(ssid, "MyNetwork");
+    }
+
+    #[test]
+    fn parse_iw_link_not_connected() {
+        assert!(parse_iw_link_output("Not connected.").is_none());
+    }
+
+    #[test]
+    fn parse_iw_link_fractional_signal() {
+        let output = "\
+Connected to 11:22:33:44:55:66 (on wlan0)
+\tSSID: TestNet
+\tfreq: 2437
+\tsignal: -71.50 dBm
+";
+        let (rssi, _signal, ssid) = parse_iw_link_output(output).unwrap();
+        assert!((rssi - (-71.5)).abs() < f64::EPSILON);
+        assert_eq!(ssid, "TestNet");
+    }
+
+    #[test]
+    fn parse_iw_link_no_ssid_defaults_unknown() {
+        let output = "\
+Connected to de:ad:be:ef:00:01 (on wlan0)
+\tfreq: 5745
+\tsignal: -45 dBm
+";
+        let (rssi, _, ssid) = parse_iw_link_output(output).unwrap();
+        assert!((rssi - (-45.0)).abs() < f64::EPSILON);
+        assert_eq!(ssid, "Unknown");
+    }
 }

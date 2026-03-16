@@ -170,7 +170,7 @@ export interface WasmModule {
 // Sensing Server
 // ---------------------------------------------------------------------------
 
-export type DataSource = "auto" | "wifi" | "esp32" | "simulate";
+export type DataSource = "auto" | "wifi" | "linux" | "esp32" | "simulate";
 
 export interface ServerConfig {
   http_port: number;
