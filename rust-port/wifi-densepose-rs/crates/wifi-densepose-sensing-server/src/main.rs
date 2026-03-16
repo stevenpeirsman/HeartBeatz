@@ -1571,66 +1571,47 @@ async fn linux_wifi_task(state: SharedState, tick_ms: u64, interface: String) {
             }
         };
 
-        let frame = Esp32Frame {
-            magic: 0xC511_0001,
-            node_id: 0,
-            n_antennas: 1,
-            n_subcarriers: 1,
-            freq_mhz: 2437,
-            sequence: seq,
-            rssi: rssi_dbm.clamp(-128.0, 127.0) as i8,
-            noise_floor: -90,
-            amplitudes: vec![signal_pct],
-            phases: vec![0.0],
-        };
-
         let mut s = state.write().await;
 
-        // Update frame history before extracting features.
-        s.frame_history.push_back(frame.amplitudes.clone());
-        if s.frame_history.len() > FRAME_HISTORY_CAPACITY {
-            s.frame_history.pop_front();
-        }
-
-        let sample_rate_hz = 1000.0 / tick_ms as f64;
-        let (features, mut classification, breathing_rate_hz, sub_variances, raw_motion) =
-            extract_features_from_frame(&frame, &s.frame_history, sample_rate_hz);
-        smooth_and_classify(&mut s, &mut classification, raw_motion);
-        adaptive_override(&s, &features, &mut classification);
-
-        s.source = format!("linux:{ssid}");
+        // Track RSSI history for variance-based motion detection.
         s.rssi_history.push_back(rssi_dbm);
         if s.rssi_history.len() > 60 {
             s.rssi_history.pop_front();
         }
 
+        // Compute RSSI variance over the recent window — this is the only
+        // real motion signal available from a single RSSI value.
+        let rssi_variance = if s.rssi_history.len() >= 2 {
+            let mean = s.rssi_history.iter().sum::<f64>() / s.rssi_history.len() as f64;
+            s.rssi_history.iter().map(|r| (r - mean).powi(2)).sum::<f64>()
+                / s.rssi_history.len() as f64
+        } else {
+            0.0
+        };
+
+        // Classify motion from RSSI variance alone.
+        // These thresholds are empirical for single-AP RSSI:
+        //   variance < 0.5  → absent / no motion
+        //   0.5..2.0        → present, mostly still
+        //   2.0..8.0        → present, moving
+        //   > 8.0           → active motion (walking, gesturing near AP)
+        let (motion_level, presence, confidence) = if rssi_variance > 8.0 {
+            ("active", true, 0.85)
+        } else if rssi_variance > 2.0 {
+            ("present_moving", true, 0.70)
+        } else if rssi_variance > 0.5 {
+            ("present_still", true, 0.55)
+        } else {
+            ("absent", false, 0.90)
+        };
+
+        s.source = format!("linux:{ssid}");
         s.tick += 1;
         let tick = s.tick;
 
-        let motion_score = if classification.motion_level == "active" {
-            0.8
-        } else if classification.motion_level == "present_still" {
-            0.3
-        } else {
-            0.05
-        };
-
-        let raw_vitals = s.vital_detector.process_frame(&frame.amplitudes, &frame.phases);
-        let vitals = smooth_vitals(&mut s, &raw_vitals);
-        s.latest_vitals = vitals.clone();
-
-        let feat_variance = features.variance;
-
-        // Multi-person estimation with temporal smoothing (EMA α=0.15).
-        let raw_score = compute_person_score(&features);
-        s.smoothed_person_score = s.smoothed_person_score * 0.85 + raw_score * 0.15;
-        let est_persons = if classification.presence {
-            score_to_person_count(s.smoothed_person_score)
-        } else {
-            0
-        };
-
-        let mut update = SensingUpdate {
+        // RSSI-only mode: emit only what we can actually measure.
+        // No fake vitals, no pose keypoints, no signal field, no person count.
+        let update = SensingUpdate {
             msg_type: "sensing_update".to_string(),
             timestamp: chrono::Utc::now().timestamp_millis() as f64 / 1000.0,
             source: format!("linux:{ssid}"),
@@ -1642,13 +1623,26 @@ async fn linux_wifi_task(state: SharedState, tick_ms: u64, interface: String) {
                 amplitude: vec![signal_pct],
                 subcarrier_count: 1,
             }],
-            features,
-            classification,
-            signal_field: generate_signal_field(
-                rssi_dbm, motion_score, breathing_rate_hz,
-                feat_variance.min(1.0), &sub_variances,
-            ),
-            vital_signs: Some(vitals),
+            features: FeatureInfo {
+                mean_rssi: rssi_dbm,
+                variance: rssi_variance,
+                motion_band_power: 0.0,
+                breathing_band_power: 0.0,
+                dominant_freq_hz: 0.0,
+                change_points: 0,
+                spectral_power: 0.0,
+            },
+            classification: ClassificationInfo {
+                motion_level: motion_level.to_string(),
+                presence,
+                confidence,
+            },
+            // Empty signal field — RSSI-only mode cannot produce spatial data.
+            signal_field: SignalField {
+                grid_size: [0, 0, 0],
+                values: vec![],
+            },
+            vital_signs: None,
             enhanced_motion: None,
             enhanced_breathing: None,
             posture: None,
@@ -1658,13 +1652,8 @@ async fn linux_wifi_task(state: SharedState, tick_ms: u64, interface: String) {
             pose_keypoints: None,
             model_status: None,
             persons: None,
-            estimated_persons: if est_persons > 0 { Some(est_persons) } else { None },
+            estimated_persons: None,
         };
-
-        let persons = derive_pose_from_sensing(&update);
-        if !persons.is_empty() {
-            update.persons = Some(persons);
-        }
 
         if let Ok(json) = serde_json::to_string(&update) {
             let _ = s.tx.send(json);
