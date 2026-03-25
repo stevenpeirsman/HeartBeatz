@@ -14,6 +14,10 @@ import { KeyboardShortcuts } from './utils/keyboard-shortcuts.js';
 import { PerfMonitor } from './utils/perf-monitor.js';
 import { toastManager } from './utils/toast.js';
 import { ThemeToggle } from './utils/theme-toggle.js';
+import { i18n } from './utils/i18n.js';
+import { ScreenshotTool } from './utils/screenshot.js';
+import { UptimeClock } from './utils/uptime-clock.js';
+import { QuickSettings } from './utils/quick-settings.js';
 
 class WiFiDensePoseApp {
   constructor() {
@@ -187,8 +191,26 @@ class WiFiDensePoseApp {
     this.perfMonitor = new PerfMonitor();
     this.perfMonitor.init();
 
+    // Screenshot tool
+    this.screenshotTool = new ScreenshotTool();
+    this.screenshotTool.init();
+
+    // Uptime clock
+    this.uptimeClock = new UptimeClock();
+    this.uptimeClock.init();
+
+    // Quick settings panel
+    this.quickSettings = new QuickSettings(this);
+    this.quickSettings.init();
+
+    // Internationalization (EN/PL)
+    i18n.init();
+
     // Keyboard shortcuts (pass app reference for tab switching)
     this.keyboardShortcuts = new KeyboardShortcuts(this);
+    this.keyboardShortcuts.register('s', 'Take screenshot', () => {
+      document.dispatchEvent(new CustomEvent('take-screenshot'));
+    });
     this.keyboardShortcuts.init();
   }
 
@@ -331,6 +353,10 @@ class WiFiDensePoseApp {
     if (this.keyboardShortcuts) this.keyboardShortcuts.dispose();
     if (this.perfMonitor) this.perfMonitor.dispose();
     if (this.themeToggle) this.themeToggle.dispose();
+    if (this.screenshotTool) this.screenshotTool.dispose();
+    if (this.uptimeClock) this.uptimeClock.dispose();
+    if (this.quickSettings) this.quickSettings.dispose();
+    i18n.dispose();
     toastManager.dispose();
   }
 
