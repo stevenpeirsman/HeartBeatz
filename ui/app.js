@@ -14,6 +14,7 @@ import { KeyboardShortcuts } from './utils/keyboard-shortcuts.js';
 import { PerfMonitor } from './utils/perf-monitor.js';
 import { toastManager } from './utils/toast.js';
 import { ThemeToggle } from './utils/theme-toggle.js';
+import { MobileNav } from './utils/mobile-nav.js';
 
 class WiFiDensePoseApp {
   constructor() {
@@ -187,9 +188,27 @@ class WiFiDensePoseApp {
     this.perfMonitor = new PerfMonitor();
     this.perfMonitor.init();
 
+    // Mobile navigation (hamburger menu for small screens)
+    this.mobileNav = new MobileNav();
+    this.mobileNav.init();
+
     // Keyboard shortcuts (pass app reference for tab switching)
     this.keyboardShortcuts = new KeyboardShortcuts(this);
     this.keyboardShortcuts.init();
+
+    // Register PWA service worker
+    this.registerServiceWorker();
+  }
+
+  // Register service worker for offline capability
+  registerServiceWorker() {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').then(reg => {
+        console.info('Service worker registered:', reg.scope);
+      }).catch(err => {
+        console.warn('Service worker registration failed:', err);
+      });
+    }
   }
 
   // Handle tab changes
@@ -331,6 +350,7 @@ class WiFiDensePoseApp {
     if (this.keyboardShortcuts) this.keyboardShortcuts.dispose();
     if (this.perfMonitor) this.perfMonitor.dispose();
     if (this.themeToggle) this.themeToggle.dispose();
+    if (this.mobileNav) this.mobileNav.dispose();
     toastManager.dispose();
   }
 
