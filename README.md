@@ -79,6 +79,7 @@ docker run -p 3000:3000 ruvnet/wifi-densepose:latest
 | [Domain Models](docs/ddd/README.md) | 7 DDD models (RuvSense, Signal Processing, Training Pipeline, Hardware Platform, Sensing Server, WiFi-Mat, CHCI) — bounded contexts, aggregates, domain events, and ubiquitous language |
 | [Desktop App](rust-port/wifi-densepose-rs/crates/wifi-densepose-desktop/README.md) | **WIP** — Tauri v2 desktop app for node management, OTA updates, WASM deployment, and mesh visualization |
 | [Medical Examples](examples/medical/README.md) | Contactless blood pressure, heart rate, breathing rate via 60 GHz mmWave radar — $15 hardware, no wearable |
+| [Deep_wiki](https://deepwiki.com/ruvnet/RuView/2-quick-start) |
 
 ---
 
