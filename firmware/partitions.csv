@@ -1,0 +1,15 @@
+# HeartBeatz ESP32-S3 Partition Table (2MB flash — single app, no OTA)
+# =========================================================================
+# Compact layout for ESP32-S3 modules with 2MB flash. Since 2MB cannot fit
+# dual OTA slots, we use a single factory partition. OTA can be re-enabled
+# later if modules with larger flash are used.
+#
+# Memory map (2MB = 0x200000):
+#   0x009000 - 0x00EFFF  NVS (24KB) — runtime config overrides
+#   0x00F000 - 0x00FFFF  PHY init (4KB) — WiFi RF calibration data
+#   0x010000 - 0x1FFFFF  Factory app (1.94MB) — main firmware image
+#
+# Name,      Type, SubType,  Offset,    Size,     Flags
+nvs,         data, nvs,      0x9000,    0x6000,
+phy_init,    data, phy,      0xf000,    0x1000,
+factory,     app,  factory,  0x10000,   0x1F0000,

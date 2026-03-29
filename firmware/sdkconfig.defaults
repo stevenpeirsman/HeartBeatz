@@ -1,0 +1,23 @@
+# ==============================================================================
+# HeartBeatz Sensor Node — sdkconfig overrides
+# ==============================================================================
+# These override the default ESP-IDF Kconfig values at build time.
+# PlatformIO picks up this file automatically from the project root.
+
+# --- Console output via USB-JTAG (not UART) ---
+# ESP32-S3 DevKitC boards expose USB-JTAG as the primary USB port.
+# Default ESP-IDF sends console to UART0 (GPIO43/44) which requires
+# a separate UART adapter to read. This redirects to the built-in USB.
+CONFIG_ESP_CONSOLE_USB_SERIAL_JTAG=y
+
+# --- FreeRTOS tuning ---
+CONFIG_FREERTOS_HZ=1000
+CONFIG_ESP_MAIN_TASK_STACK_SIZE=8192
+
+# --- WiFi CSI requires promiscuous mode memory ---
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=32
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
+
+# --- Logging ---
+CONFIG_LOG_DEFAULT_LEVEL_INFO=y
+CONFIG_LOG_MAXIMUM_LEVEL_DEBUG=y

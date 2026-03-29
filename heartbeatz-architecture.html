@@ -1,0 +1,1180 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HeartBeatz — Complete System Architecture</title>
+<style>
+  :root {
+    --bg: #0f1117;
+    --card: #1a1d27;
+    --border: #2a2d3a;
+    --accent: #4f8cff;
+    --accent2: #ff6b4f;
+    --accent3: #34d399;
+    --accent4: #f59e0b;
+    --accent5: #a78bfa;
+    --text: #e2e8f0;
+    --muted: #8892a4;
+    --highlight: rgba(79,140,255,0.12);
+    --code-bg: rgba(255,255,255,0.06);
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'Inter','Segoe UI',system-ui,sans-serif; overflow-x:hidden; }
+
+  /* Navigation */
+  nav { position:sticky; top:0; z-index:100; background:rgba(15,17,23,0.95); backdrop-filter:blur(12px); border-bottom:1px solid var(--border); padding:12px 24px; display:flex; gap:6px; align-items:center; flex-wrap:wrap; }
+  nav .logo { font-weight:700; font-size:18px; margin-right:16px; color:var(--accent); white-space:nowrap; }
+  nav .logo span { color:var(--accent2); }
+  nav button { background:var(--card); border:1px solid var(--border); color:var(--text); padding:6px 12px; border-radius:6px; cursor:pointer; font-size:12px; transition:all .15s; white-space:nowrap; }
+  nav button:hover, nav button.active { background:var(--accent); color:#fff; border-color:var(--accent); }
+
+  /* Views */
+  .view { display:none; padding:24px; max-width:1500px; margin:0 auto; }
+  .view.active { display:block; }
+
+  h1 { font-size:26px; font-weight:700; margin-bottom:6px; }
+  h2 { font-size:18px; font-weight:600; margin:24px 0 10px; color:var(--accent); border-bottom:1px solid var(--border); padding-bottom:6px; }
+  h3 { font-size:15px; font-weight:600; margin:16px 0 6px; color:var(--accent3); }
+  h4 { font-size:13px; font-weight:600; margin:12px 0 4px; color:var(--accent4); }
+  p, li { font-size:13px; line-height:1.65; color:var(--muted); }
+  .subtitle { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  a { color:var(--accent); text-decoration:none; }
+  a:hover { text-decoration:underline; }
+
+  /* Cards */
+  .card-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:12px; margin:12px 0; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:16px; transition:all .2s; }
+  .card:hover { border-color:var(--accent); box-shadow:0 4px 16px rgba(0,0,0,0.3); }
+  .card-header { display:flex; align-items:center; gap:8px; margin-bottom:8px; }
+  .card-icon { width:32px; height:32px; border-radius:6px; display:flex; align-items:center; justify-content:center; font-size:16px; flex-shrink:0; }
+  .card-title { font-weight:600; font-size:14px; }
+  .card-tag { font-size:10px; background:rgba(79,140,255,0.15); color:var(--accent); padding:2px 6px; border-radius:3px; margin-left:auto; }
+  .card-body { font-size:12px; color:var(--muted); line-height:1.6; }
+
+  /* Code blocks */
+  pre { background:var(--card); border:1px solid var(--border); border-radius:6px; padding:12px; overflow-x:auto; margin:8px 0; font-size:11px; line-height:1.5; }
+  code { font-family:'Fira Code','Cascadia Code','Consolas',monospace; font-size:11px; }
+  .inline-code { background:var(--code-bg); padding:1px 5px; border-radius:3px; color:var(--accent3); }
+  .keyword { color:var(--accent5); }
+  .type { color:var(--accent4); }
+  .string { color:var(--accent3); }
+  .comment { color:#5a6270; font-style:italic; }
+  .number { color:var(--accent2); }
+
+  /* Flow diagram */
+  .flow-container { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:20px; margin:12px 0; overflow-x:auto; }
+  .flow { display:flex; align-items:center; gap:0; flex-wrap:nowrap; min-width:max-content; }
+  .flow-node { background:var(--bg); border:2px solid var(--border); border-radius:8px; padding:10px 14px; min-width:120px; text-align:center; flex-shrink:0; }
+  .flow-node .fn-label { font-size:10px; color:var(--muted); text-transform:uppercase; letter-spacing:.5px; }
+  .flow-node .fn-name { font-weight:600; font-size:13px; margin:3px 0; }
+  .flow-node .fn-detail { font-size:10px; color:var(--muted); }
+  .flow-arrow { color:var(--accent); font-size:18px; padding:0 4px; flex-shrink:0; display:flex; flex-direction:column; align-items:center; gap:1px; }
+  .flow-arrow .fa-label { font-size:9px; color:var(--muted); white-space:nowrap; }
+  .flow-node.hw { border-color:var(--accent2); }
+  .flow-node.sw { border-color:var(--accent); }
+  .flow-node.net { border-color:var(--accent3); }
+  .flow-node.ui { border-color:var(--accent4); }
+
+  /* Tables */
+  table { width:100%; border-collapse:collapse; margin:8px 0; font-size:12px; }
+  th,td { text-align:left; padding:6px 10px; border-bottom:1px solid var(--border); }
+  th { color:var(--accent); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.5px; background:rgba(79,140,255,0.05); }
+  td code { background:var(--code-bg); padding:1px 4px; border-radius:3px; font-family:monospace; font-size:11px; }
+
+  /* Crate map */
+  .crate-map { display:grid; grid-template-columns:repeat(auto-fill,minmax(200px,1fr)); gap:8px; margin:8px 0; }
+  .crate-item { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px; }
+  .crate-item .crate-name { font-weight:600; font-family:monospace; color:var(--accent); font-size:11px; margin-bottom:3px; }
+  .crate-item .crate-desc { color:var(--muted); font-size:11px; }
+  .crate-item .crate-deps { font-size:10px; color:var(--accent5); margin-top:4px; }
+
+  /* Dimension cards */
+  .dim-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:10px; margin:10px 0; }
+  .dim-card { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:12px; }
+  .dim-card .dim-name { font-weight:600; font-size:13px; margin-bottom:4px; }
+  .dim-card .dim-size { font-family:monospace; font-size:15px; color:var(--accent); margin-bottom:3px; }
+  .dim-card .dim-weight { font-family:monospace; font-size:12px; color:var(--accent4); }
+  .dim-card .dim-note { font-size:11px; color:var(--muted); margin-top:4px; }
+
+  /* Tabs within views */
+  .tabs { display:flex; gap:2px; margin:12px 0; border-bottom:1px solid var(--border); flex-wrap:wrap; }
+  .tab { padding:6px 14px; font-size:12px; color:var(--muted); cursor:pointer; border-bottom:2px solid transparent; transition:all .15s; background:none; border-top:none; border-left:none; border-right:none; }
+  .tab:hover { color:var(--text); }
+  .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+  .tab-content { display:none; }
+  .tab-content.active { display:block; }
+
+  /* Legend */
+  .legend { display:flex; gap:16px; margin:12px 0; flex-wrap:wrap; }
+  .legend-item { display:flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); }
+  .legend-dot { width:10px; height:10px; border-radius:2px; border:2px solid; }
+
+  /* Scrollbar */
+  ::-webkit-scrollbar { width:5px; height:5px; }
+  ::-webkit-scrollbar-track { background:var(--bg); }
+  ::-webkit-scrollbar-thumb { background:var(--border); border-radius:3px; }
+
+  /* SVG enclosure drawings */
+  .enclosure-svg { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:16px; margin:12px 0; text-align:center; }
+  .enclosure-svg svg { max-width:100%; height:auto; }
+
+  /* Struct blocks */
+  .struct-block { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:12px; margin:8px 0; }
+  .struct-block .struct-name { font-weight:700; font-family:monospace; color:var(--accent4); font-size:13px; margin-bottom:6px; }
+  .struct-block .struct-field { font-family:monospace; font-size:11px; color:var(--muted); padding:1px 0; display:flex; gap:8px; }
+  .struct-block .struct-field .field-name { color:var(--text); min-width:160px; }
+  .struct-block .struct-field .field-type { color:var(--accent5); min-width:120px; }
+  .struct-block .struct-field .field-desc { color:var(--muted); }
+
+  /* Pipeline stage */
+  .pipeline { display:flex; flex-direction:column; gap:8px; margin:10px 0; }
+  .pipeline-stage { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px 14px; display:flex; gap:12px; align-items:flex-start; }
+  .pipeline-stage .stage-num { background:var(--accent); color:#fff; font-weight:700; font-size:11px; width:24px; height:24px; border-radius:12px; display:flex; align-items:center; justify-content:center; flex-shrink:0; }
+  .pipeline-stage .stage-name { font-weight:600; font-size:13px; margin-bottom:2px; }
+  .pipeline-stage .stage-file { font-family:monospace; font-size:10px; color:var(--accent5); }
+  .pipeline-stage .stage-desc { font-size:11px; color:var(--muted); margin-top:3px; }
+
+  /* Scenario table */
+  .scenario-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(280px,1fr)); gap:8px; margin:10px 0; }
+  .scenario-card { background:var(--bg); border:1px solid var(--border); border-radius:6px; padding:10px; }
+  .scenario-card .sc-num { font-size:10px; color:var(--accent2); font-weight:600; }
+  .scenario-card .sc-name { font-weight:600; font-size:13px; margin:2px 0; }
+  .scenario-card .sc-desc { font-size:11px; color:var(--muted); }
+  .scenario-card .sc-modules { font-size:10px; color:var(--accent5); margin-top:4px; }
+
+  /* Keyboard shortcut list */
+  .kbd { background:var(--card); border:1px solid var(--border); padding:1px 6px; border-radius:3px; font-family:monospace; font-size:11px; color:var(--accent4); }
+
+  /* Status indicators */
+  .status-badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:10px; font-weight:600; }
+  .status-badge.green { background:rgba(52,211,153,0.15); color:var(--accent3); }
+  .status-badge.blue { background:rgba(79,140,255,0.15); color:var(--accent); }
+  .status-badge.orange { background:rgba(245,158,11,0.15); color:var(--accent4); }
+  .status-badge.red { background:rgba(255,107,79,0.15); color:var(--accent2); }
+
+  /* Two column layout */
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:16px; }
+  @media (max-width:900px) { .two-col { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="logo">Heart<span>Beatz</span></div>
+  <button class="active" onclick="showView('overview')">Overview</button>
+  <button onclick="showView('dataflow')">Data Flow</button>
+  <button onclick="showView('software')">Software Stack</button>
+  <button onclick="showView('network')">Network</button>
+  <button onclick="showView('firmware')">ESP32 Firmware</button>
+  <button onclick="showView('api')">Ports &amp; APIs</button>
+  <button onclick="showView('ui')">UI &amp; Visualization</button>
+  <button onclick="showView('enclosure')">Enclosure</button>
+</nav>
+
+<!-- ==================== OVERVIEW ==================== -->
+<div id="overview" class="view active">
+  <h1>HeartBeatz System Architecture</h1>
+  <p class="subtitle">Portable WiFi CSI Sensing Demo Appliance &mdash; Complete Technical Reference</p>
+
+  <div class="legend">
+    <div class="legend-item"><div class="legend-dot" style="border-color:var(--accent2)"></div> Hardware</div>
+    <div class="legend-item"><div class="legend-dot" style="border-color:var(--accent)"></div> Software</div>
+    <div class="legend-item"><div class="legend-dot" style="border-color:var(--accent3)"></div> Network</div>
+    <div class="legend-item"><div class="legend-dot" style="border-color:var(--accent4)"></div> UI / Display</div>
+  </div>
+
+  <h2>System Overview</h2>
+  <p>HeartBeatz is a self-contained, battery-powered demo appliance that demonstrates WiFi Channel State Information (CSI) sensing. It detects human presence, pose, movement, and vital signs using only WiFi radio signals — no cameras, wearables, or contact sensors needed.</p>
+
+  <div class="flow-container">
+    <div class="flow">
+      <div class="flow-node hw">
+        <div class="fn-label">Sensor</div>
+        <div class="fn-name">3× ESP32-S3</div>
+        <div class="fn-detail">CSI capture @ 50Hz</div>
+      </div>
+      <div class="flow-arrow"><span>→</span><span class="fa-label">UDP :5005</span></div>
+      <div class="flow-node net">
+        <div class="fn-label">Router</div>
+        <div class="fn-name">GL.iNet MT3000</div>
+        <div class="fn-detail">192.168.8.1</div>
+      </div>
+      <div class="flow-arrow"><span>→</span><span class="fa-label">Ethernet</span></div>
+      <div class="flow-node sw">
+        <div class="fn-label">Server</div>
+        <div class="fn-name">Rust / Axum</div>
+        <div class="fn-detail">MeLE N100</div>
+      </div>
+      <div class="flow-arrow"><span>→</span><span class="fa-label">WebSocket</span></div>
+      <div class="flow-node ui">
+        <div class="fn-label">Display</div>
+        <div class="fn-name">Three.js Observatory</div>
+        <div class="fn-detail">VoCore 5" + Browser</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Hardware Components</h2>
+  <div class="card-grid">
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:rgba(255,107,79,0.15)">🖥️</div>
+        <div class="card-title">MeLE Overclock4C (N100)</div>
+        <span class="card-tag">Main Box</span>
+      </div>
+      <div class="card-body">
+        <strong>Dimensions:</strong> 131 × 81 × 18.3mm &bull; <strong>Weight:</strong> 317.5g<br>
+        Intel N100 (4C/4T, 3.4GHz burst), 16GB DDR5, 512GB NVMe<br>
+        Ports: 2× USB 3.2, 1× USB-C, HDMI, 2× Gigabit Ethernet, 3.5mm audio<br>
+        TDP: 6W (configurable), passive cooling, runs Ubuntu 22.04 + Docker
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:rgba(52,211,153,0.15)">📡</div>
+        <div class="card-title">GL.iNet MT3000 (Beryl AX)</div>
+        <span class="card-tag">Main Box</span>
+      </div>
+      <div class="card-body">
+        <strong>Dimensions:</strong> 120 × 83 × 34mm &bull; <strong>Weight:</strong> 196g<br>
+        MediaTek MT7981B, WiFi 6 (AX3000), 2.4GHz + 5GHz<br>
+        Creates private network (SSID: HeartBeatz), DHCP server at 192.168.8.1<br>
+        MeLE connects via Ethernet (static 192.168.8.10), ESP32 nodes via WiFi
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:rgba(79,140,255,0.15)">🔋</div>
+        <div class="card-title">UGREEN 25,000mAh Power Bank</div>
+        <span class="card-tag">Main Box</span>
+      </div>
+      <div class="card-body">
+        <strong>Dimensions:</strong> 155 × 54 × 51mm &bull; <strong>Weight:</strong> 609g<br>
+        USB-C PD 140W + USB-A outputs, powers MeLE (PD) + Router (USB-A 5V/2A)<br>
+        Estimated runtime: ~4-5 hours (MeLE ~10W + Router ~5W + Display ~2W)
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:rgba(245,158,11,0.15)">📺</div>
+        <div class="card-title">VoCore 5" Touchscreen</div>
+        <span class="card-tag">Main Box</span>
+      </div>
+      <div class="card-body">
+        <strong>Dimensions:</strong> 119.3 × 68.7 × 3.6mm &bull; <strong>Connection:</strong> USB-C (USB 2.0)<br>
+        800×480 resolution, capacitive touch, shows Observatory UI<br>
+        <strong>Note:</strong> NOT HDMI — connects via USB display adapter protocol. Factor USB port allocation.
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:rgba(167,139,250,0.15)">📶</div>
+        <div class="card-title">3× Heemol ESP32-S3 N16R8</div>
+        <span class="card-tag">Sensor Nodes</span>
+      </div>
+      <div class="card-body">
+        <strong>Dimensions:</strong> ~70 × 28 × 8mm &bull; <strong>Weight:</strong> ~10g each<br>
+        Xtensa LX7 dual-core 240MHz, 16MB Flash, 8MB PSRAM<br>
+        WiFi 6 capable, runs ESP-IDF v5.2 firmware, CSI collection + edge processing<br>
+        Placed around demo room (2-5m from subjects), connected to HeartBeatz WiFi
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header">
+        <div class="card-icon" style="background:rgba(255,107,79,0.15)">🔌</div>
+        <div class="card-title">TECNOIOT 18650 UPS + 2× Cells</div>
+        <span class="card-tag">Per Sensor Node</span>
+      </div>
+      <div class="card-body">
+        <strong>UPS Board:</strong> 90 × 22 × 28.5mm &bull; <strong>Cells:</strong> 18mm Ø × 65mm each<br>
+        Provides regulated 5V output to ESP32 via USB, charge-while-run<br>
+        2× 18650 cells ≈ 6,000-7,000mAh → ~8-12 hours runtime per node<br>
+        Total per node: ~100 × 65 × 35mm assembled with battery box
+      </div>
+    </div>
+  </div>
+
+  <h2>Key Specifications</h2>
+  <table>
+    <tr><th>Parameter</th><th>Value</th><th>Notes</th></tr>
+    <tr><td>CSI Frame Rate</td><td><code>50 Hz</code> max</td><td>20ms rate limiter in firmware (CSI_MIN_SEND_INTERVAL_US)</td></tr>
+    <tr><td>CSI Frame Size</td><td><code>356 bytes</code> typical</td><td>20-byte ADR-018 header + 336 bytes I/Q (3 ant × 56 sub × 2 bytes)</td></tr>
+    <tr><td>Binary Magic</td><td><code>0xC5110001</code></td><td>ADR-018 CSI frame identifier, little-endian</td></tr>
+    <tr><td>Network</td><td>192.168.8.x private</td><td>Router DHCP, MeLE static .10, ESP32 nodes .100-.102</td></tr>
+    <tr><td>REST API</td><td>Port <code>3000</code></td><td>Axum HTTP server, 40+ endpoints</td></tr>
+    <tr><td>WebSocket</td><td>Port <code>3001</code></td><td>Real-time sensing updates + pose streaming</td></tr>
+    <tr><td>UDP Ingest</td><td>Port <code>5005</code></td><td>Binary CSI frames from ESP32 nodes</td></tr>
+    <tr><td>Docker</td><td>Multi-arch</td><td>amd64 + arm64, single docker-compose up</td></tr>
+    <tr><td>Signal Pipeline</td><td>9 stages</td><td>Hampel → Phase → Fresnel → BVP → FFT → Pose</td></tr>
+    <tr><td>Demo Scenarios</td><td>12 built-in</td><td>Simulation mode, no hardware needed</td></tr>
+    <tr><td>Total Main Box Weight</td><td>~1,122g</td><td>MeLE + Router + Power Bank (without enclosure)</td></tr>
+  </table>
+</div>
+
+<!-- ==================== DATA FLOW ==================== -->
+<div id="dataflow" class="view">
+  <h1>Data Flow</h1>
+  <p class="subtitle">End-to-end path from WiFi radio to 3D visualization</p>
+
+  <h2>Primary Data Pipeline</h2>
+  <div class="flow-container">
+    <div class="flow">
+      <div class="flow-node hw">
+        <div class="fn-label">1. Capture</div>
+        <div class="fn-name">WiFi CSI Callback</div>
+        <div class="fn-detail">esp_wifi_set_csi_rx_cb</div>
+      </div>
+      <div class="flow-arrow"><span>→</span><span class="fa-label">I/Q data</span></div>
+      <div class="flow-node hw">
+        <div class="fn-label">2. Serialize</div>
+        <div class="fn-name">ADR-018 Frame</div>
+        <div class="fn-detail">20-byte header + payload</div>
+      </div>
+      <div class="flow-arrow"><span>→</span><span class="fa-label">UDP :5005</span></div>
+      <div class="flow-node sw">
+        <div class="fn-label">3. Ingest</div>
+        <div class="fn-name">esp32_frame_handler</div>
+        <div class="fn-detail">Parse + validate magic</div>
+      </div>
+      <div class="flow-arrow"><span>→</span><span class="fa-label">Channel</span></div>
+      <div class="flow-node sw">
+        <div class="fn-label">4. Process</div>
+        <div class="fn-name">Signal Pipeline</div>
+        <div class="fn-detail">9-stage DSP</div>
+      </div>
+      <div class="flow-arrow"><span>→</span><span class="fa-label">Broadcast</span></div>
+      <div class="flow-node sw">
+        <div class="fn-label">5. Stream</div>
+        <div class="fn-name">WebSocket</div>
+        <div class="fn-detail">SensingUpdate JSON</div>
+      </div>
+      <div class="flow-arrow"><span>→</span><span class="fa-label">WS :3001</span></div>
+      <div class="flow-node ui">
+        <div class="fn-label">6. Render</div>
+        <div class="fn-name">Observatory</div>
+        <div class="fn-detail">Three.js + HUD</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>ADR-018 Binary Frame Format</h2>
+  <p>Every CSI frame from ESP32 follows this exact binary layout (little-endian):</p>
+  <table>
+    <tr><th>Offset</th><th>Size</th><th>Field</th><th>Type</th><th>Description</th></tr>
+    <tr><td><code>0</code></td><td>4</td><td>Magic</td><td><code>u32 LE</code></td><td><code>0xC5110001</code> — identifies CSI frame</td></tr>
+    <tr><td><code>4</code></td><td>1</td><td>Node ID</td><td><code>u8</code></td><td>Sensor node identifier (0-255)</td></tr>
+    <tr><td><code>5</code></td><td>1</td><td>Antennas</td><td><code>u8</code></td><td>Number of RX antennas (typically 1 on ESP32-S3)</td></tr>
+    <tr><td><code>6</code></td><td>2</td><td>Subcarriers</td><td><code>u16 LE</code></td><td>Number of OFDM subcarriers (56 typical)</td></tr>
+    <tr><td><code>8</code></td><td>4</td><td>Frequency</td><td><code>u32 LE</code></td><td>Center frequency in MHz (e.g., 2437 for ch6)</td></tr>
+    <tr><td><code>12</code></td><td>4</td><td>Sequence</td><td><code>u32 LE</code></td><td>Monotonic frame counter</td></tr>
+    <tr><td><code>16</code></td><td>1</td><td>RSSI</td><td><code>i8</code></td><td>Received signal strength (dBm)</td></tr>
+    <tr><td><code>17</code></td><td>1</td><td>Noise Floor</td><td><code>i8</code></td><td>Noise floor (dBm)</td></tr>
+    <tr><td><code>18</code></td><td>2</td><td>Reserved</td><td><code>—</code></td><td>Zero-padded for alignment</td></tr>
+    <tr><td><code>20</code></td><td>N</td><td>I/Q Data</td><td><code>i8[]</code></td><td>Raw CSI: pairs of [I, Q] per subcarrier per antenna</td></tr>
+  </table>
+  <p style="margin-top:8px">Typical frame: 20 + (1 antenna × 56 subcarriers × 2 bytes) = <strong>132 bytes</strong>. With 3 antennas: <strong>356 bytes</strong>.</p>
+
+  <h2>Additional Frame Types</h2>
+  <table>
+    <tr><th>Magic</th><th>Type</th><th>Source</th><th>Content</th></tr>
+    <tr><td><code>0xC5110002</code></td><td>Edge Vitals</td><td>ESP32 edge processing</td><td>Presence, fall, breathing, HR, motion energy, person count</td></tr>
+    <tr><td><code>0xC5110004</code></td><td>WASM Output</td><td>ESP32 WASM runtime</td><td>Custom events from user-deployed WASM modules</td></tr>
+  </table>
+
+  <h2>CSI Source Modes</h2>
+  <p>The <code class="inline-code">CSI_SOURCE</code> environment variable (or <code class="inline-code">--source</code> CLI arg) controls where data comes from:</p>
+  <table>
+    <tr><th>Mode</th><th>Description</th><th>Use Case</th></tr>
+    <tr><td><code>auto</code></td><td>Probe UDP :5005 for ESP32 → fall back to Windows WiFi → fall back to simulation</td><td>Default: hardware when available, demo otherwise</td></tr>
+    <tr><td><code>esp32</code></td><td>Listen on UDP :5005 for ADR-018 binary frames from ESP32 nodes</td><td>Production mode with real sensor hardware</td></tr>
+    <tr><td><code>wifi</code></td><td>Windows WiFi passive scanning via netsh, multi-BSSID pipeline</td><td>Laptop demo without ESP32 hardware</td></tr>
+    <tr><td><code>simulated</code></td><td>Generated synthetic CSI data — no hardware required</td><td>Development, testing, offline demos</td></tr>
+  </table>
+</div>
+
+<!-- ==================== SOFTWARE STACK ==================== -->
+<div id="software" class="view">
+  <h1>Software Stack</h1>
+  <p class="subtitle">16-crate Rust workspace + ESP-IDF C firmware + Three.js/React UI</p>
+
+  <h2>Rust Workspace (v0.3.0)</h2>
+  <p>The server is a Cargo workspace with 16 crates. Key dependencies: Axum 0.7, Tokio, ndarray, rustfft, tch (PyTorch bindings), ONNX Runtime.</p>
+
+  <div class="crate-map">
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-sensing-server</div>
+      <div class="crate-desc">Main binary: Axum HTTP/WS server, UDP listener, signal pipeline orchestration, 40+ REST endpoints</div>
+      <div class="crate-deps">→ core, signal, nn, api, config, hardware, vitals, ruvector</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-core</div>
+      <div class="crate-desc">Foundational types: CsiFrame, CsiMetadata, PoseEstimate, PersonPose, Keypoint (COCO-17)</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-signal</div>
+      <div class="crate-desc">DSP pipeline: CsiProcessor, PhaseSanitizer, Hampel, Spectrogram, Fresnel, BVP, Features, Motion</div>
+      <div class="crate-deps">→ core, ndarray, rustfft, num-complex</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-nn</div>
+      <div class="crate-desc">Neural network inference: pose estimation model, ONNX Runtime + PyTorch backends</div>
+      <div class="crate-deps">→ core, tch, ort, candle-core</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-api</div>
+      <div class="crate-desc">API types, request/response schemas, serialization helpers</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-config</div>
+      <div class="crate-desc">Configuration management: env vars, YAML, CLI args via clap</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-hardware</div>
+      <div class="crate-desc">Hardware abstraction: serial port comms, pcap capture, device discovery</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-vitals</div>
+      <div class="crate-desc">Vital signs: breathing rate (0.1-0.5Hz), heart rate (0.67-2.0Hz) extraction via spectral analysis</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-ruvector</div>
+      <div class="crate-desc">RuVector v2.0.4 integration: graph min-cut subcarrier partitioning, attention-gated spectrogram, BVP attention</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-db</div>
+      <div class="crate-desc">Data persistence: SQLx (Postgres/SQLite), Redis, recording storage</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-wasm</div>
+      <div class="crate-desc">WebAssembly bindings for browser-based processing</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-mat</div>
+      <div class="crate-desc">Matrix utilities, ndarray helpers, data loading (.npy)</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-train</div>
+      <div class="crate-desc">Model training: epochs, batches, learning rate scheduling, early stopping, LoRA fine-tuning</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-cli</div>
+      <div class="crate-desc">Command-line tool: record, train, evaluate, export commands</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-wifiscan</div>
+      <div class="crate-desc">Windows WiFi scanning: netsh parsing, multi-BSSID pipeline</div>
+    </div>
+    <div class="crate-item">
+      <div class="crate-name">wifi-densepose-desktop</div>
+      <div class="crate-desc">Desktop application wrapper (Tauri/native)</div>
+    </div>
+  </div>
+
+  <h2>Signal Processing Pipeline</h2>
+  <p>Raw CSI I/Q data goes through 9 sequential processing stages before producing sensing results:</p>
+
+  <div class="pipeline">
+    <div class="pipeline-stage">
+      <div class="stage-num">1</div>
+      <div>
+        <div class="stage-name">CSI Preprocessing</div>
+        <div class="stage-file">csi_processor.rs</div>
+        <div class="stage-desc">Raw I/Q intake, complex number conversion, amplitude/phase extraction. Config: sampling_rate, window_size, overlap, noise_threshold.</div>
+      </div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="stage-num">2</div>
+      <div>
+        <div class="stage-name">Phase Sanitization</div>
+        <div class="stage-file">phase_sanitizer.rs</div>
+        <div class="stage-desc">Phase unwrapping to remove 2π discontinuities from multi-path reflections. Configurable unwrapping method.</div>
+      </div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="stage-num">3</div>
+      <div>
+        <div class="stage-name">Hampel Filter</div>
+        <div class="stage-file">hampel.rs</div>
+        <div class="stage-desc">Robust outlier removal using median + MAD (Median Absolute Deviation). Window=3, threshold=3.0σ. Returns filtered signal + outlier indices.</div>
+      </div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="stage-num">4</div>
+      <div>
+        <div class="stage-name">Spectrogram</div>
+        <div class="stage-file">spectrogram.rs</div>
+        <div class="stage-desc">STFT time-frequency decomposition. Windows: Hann, Hamming, Blackman. Attention-gated noise suppression via RuVector min-cut graph partitioning.</div>
+      </div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="stage-num">5</div>
+      <div>
+        <div class="stage-name">Fresnel Zone Analysis</div>
+        <div class="stage-file">fresnel.rs</div>
+        <div class="stage-desc">Physical model: ΔΦ = 4π·d/λ. Maps CSI amplitude variations to body displacement through Fresnel zone crossings. Validates breathing matches expected physical model.</div>
+      </div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="stage-num">6</div>
+      <div>
+        <div class="stage-name">Body Velocity Profile (BVP)</div>
+        <div class="stage-file">bvp.rs</div>
+        <div class="stage-desc">STFT → frequency-to-velocity mapping (v = f_doppler × λ / 2). Scaled dot-product attention over STFT rows (RuVector). Config: window=128, hop=32, velocity_bins=64.</div>
+      </div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="stage-num">7</div>
+      <div>
+        <div class="stage-name">Feature Extraction</div>
+        <div class="stage-file">features.rs</div>
+        <div class="stage-desc">Extracts: AmplitudeFeatures, PhaseFeatures, DopplerFeatures, PowerSpectralDensity, CorrelationFeatures (inter-antenna/subcarrier).</div>
+      </div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="stage-num">8</div>
+      <div>
+        <div class="stage-name">Motion Detection</div>
+        <div class="stage-file">motion.rs</div>
+        <div class="stage-desc">Presence + motion scoring with configurable thresholds. Outputs: HumanDetectionResult (confidence, MotionScore), classifies absent/present_still/active.</div>
+      </div>
+    </div>
+    <div class="pipeline-stage">
+      <div class="stage-num">9</div>
+      <div>
+        <div class="stage-name">Vital Signs Extraction</div>
+        <div class="stage-file">vital_signs.rs</div>
+        <div class="stage-desc">FFT spectral analysis on rolling buffers. Breathing: 0.1-0.5 Hz (6-30 BPM). Heart rate: 0.67-2.0 Hz (40-120 BPM). Outputs with per-metric confidence scores.</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>Key Data Structures</h2>
+  <div class="two-col">
+    <div class="struct-block">
+      <div class="struct-name">CsiFrame</div>
+      <div class="struct-field"><span class="field-name">id</span><span class="field-type">FrameId</span><span class="field-desc">Unique identifier</span></div>
+      <div class="struct-field"><span class="field-name">metadata</span><span class="field-type">CsiMetadata</span><span class="field-desc">Timestamp, device, freq, antenna config</span></div>
+      <div class="struct-field"><span class="field-name">data</span><span class="field-type">Array2&lt;Complex64&gt;</span><span class="field-desc">[spatial_streams × subcarriers]</span></div>
+      <div class="struct-field"><span class="field-name">amplitude</span><span class="field-type">Array2&lt;f64&gt;</span><span class="field-desc">Amplitude matrix</span></div>
+      <div class="struct-field"><span class="field-name">phase</span><span class="field-type">Array2&lt;f64&gt;</span><span class="field-desc">Phase matrix</span></div>
+    </div>
+    <div class="struct-block">
+      <div class="struct-name">SensingUpdate (WebSocket broadcast)</div>
+      <div class="struct-field"><span class="field-name">msg_type</span><span class="field-type">String</span><span class="field-desc">"sensing_update"</span></div>
+      <div class="struct-field"><span class="field-name">timestamp</span><span class="field-type">f64</span><span class="field-desc">Unix epoch ms</span></div>
+      <div class="struct-field"><span class="field-name">source</span><span class="field-type">String</span><span class="field-desc">"esp32" | "wifi:{ssid}" | "simulate"</span></div>
+      <div class="struct-field"><span class="field-name">nodes</span><span class="field-type">Vec&lt;NodeInfo&gt;</span><span class="field-desc">Per-node RSSI, position, CSI</span></div>
+      <div class="struct-field"><span class="field-name">features</span><span class="field-type">FeatureInfo</span><span class="field-desc">mean_rssi, variance, band powers</span></div>
+      <div class="struct-field"><span class="field-name">vital_signs</span><span class="field-type">Option&lt;VitalSigns&gt;</span><span class="field-desc">BR, HR, confidences</span></div>
+      <div class="struct-field"><span class="field-name">persons</span><span class="field-type">Option&lt;Vec&lt;PersonDetection&gt;&gt;</span><span class="field-desc">Tracked people + poses</span></div>
+      <div class="struct-field"><span class="field-name">signal_field</span><span class="field-type">SignalField</span><span class="field-desc">20×20 spatial grid</span></div>
+    </div>
+    <div class="struct-block">
+      <div class="struct-name">PoseEstimate</div>
+      <div class="struct-field"><span class="field-name">persons</span><span class="field-type">Vec&lt;PersonPose&gt;</span><span class="field-desc">Detected people</span></div>
+      <div class="struct-field"><span class="field-name">confidence</span><span class="field-type">Confidence</span><span class="field-desc">0.0 - 1.0</span></div>
+      <div class="struct-field"><span class="field-name">latency_ms</span><span class="field-type">f32</span><span class="field-desc">Processing time</span></div>
+    </div>
+    <div class="struct-block">
+      <div class="struct-name">VitalSigns</div>
+      <div class="struct-field"><span class="field-name">breathing_rate_bpm</span><span class="field-type">Option&lt;f64&gt;</span><span class="field-desc">Breaths per minute</span></div>
+      <div class="struct-field"><span class="field-name">heart_rate_bpm</span><span class="field-type">Option&lt;f64&gt;</span><span class="field-desc">Beats per minute</span></div>
+      <div class="struct-field"><span class="field-name">breathing_confidence</span><span class="field-type">f64</span><span class="field-desc">[0, 1]</span></div>
+      <div class="struct-field"><span class="field-name">heartbeat_confidence</span><span class="field-type">f64</span><span class="field-desc">[0, 1]</span></div>
+      <div class="struct-field"><span class="field-name">signal_quality</span><span class="field-type">f64</span><span class="field-desc">[0, 1]</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- ==================== NETWORK ==================== -->
+<div id="network" class="view">
+  <h1>Network Topology</h1>
+  <p class="subtitle">Private isolated network — fully offline operation</p>
+
+  <h2>Network Diagram</h2>
+  <div class="flow-container">
+    <div class="flow">
+      <div class="flow-node hw" style="min-width:100px">
+        <div class="fn-label">Node 0</div>
+        <div class="fn-name">ESP32-S3</div>
+        <div class="fn-detail">192.168.8.100</div>
+      </div>
+      <div class="flow-arrow"><span>↘</span></div>
+      <div class="flow-node hw" style="min-width:100px">
+        <div class="fn-label">Node 1</div>
+        <div class="fn-name">ESP32-S3</div>
+        <div class="fn-detail">192.168.8.101</div>
+      </div>
+      <div class="flow-arrow"><span>→</span><span class="fa-label">WiFi</span></div>
+      <div class="flow-node net">
+        <div class="fn-label">Router</div>
+        <div class="fn-name">GL.iNet MT3000</div>
+        <div class="fn-detail">192.168.8.1</div>
+      </div>
+      <div class="flow-arrow"><span>→</span><span class="fa-label">Ethernet</span></div>
+      <div class="flow-node sw">
+        <div class="fn-label">Server</div>
+        <div class="fn-name">MeLE N100</div>
+        <div class="fn-detail">192.168.8.10</div>
+      </div>
+      <div class="flow-arrow"><span>→</span><span class="fa-label">USB</span></div>
+      <div class="flow-node ui">
+        <div class="fn-label">Display</div>
+        <div class="fn-name">VoCore 5"</div>
+        <div class="fn-detail">localhost:3000</div>
+      </div>
+    </div>
+  </div>
+
+  <h2>IP Address Plan</h2>
+  <table>
+    <tr><th>Device</th><th>IP Address</th><th>MAC (assigned)</th><th>Connection</th><th>Notes</th></tr>
+    <tr><td>GL.iNet MT3000</td><td><code>192.168.8.1</code></td><td>Router default</td><td>—</td><td>DHCP server, DNS, gateway</td></tr>
+    <tr><td>MeLE N100</td><td><code>192.168.8.10</code></td><td>Static lease</td><td>Ethernet (GbE)</td><td>Static IP via DHCP reservation</td></tr>
+    <tr><td>ESP32 Node 0</td><td><code>192.168.8.100</code></td><td>DHCP lease</td><td>WiFi (2.4GHz)</td><td>node_id=0 in NVS</td></tr>
+    <tr><td>ESP32 Node 1</td><td><code>192.168.8.101</code></td><td>DHCP lease</td><td>WiFi (2.4GHz)</td><td>node_id=1 in NVS</td></tr>
+    <tr><td>ESP32 Node 2</td><td><code>192.168.8.102</code></td><td>DHCP lease</td><td>WiFi (2.4GHz)</td><td>node_id=2 in NVS</td></tr>
+    <tr><td>Demo laptop (optional)</td><td><code>192.168.8.x</code></td><td>DHCP</td><td>WiFi (5GHz)</td><td>Alternative UI on laptop browser</td></tr>
+  </table>
+
+  <h2>Port Map</h2>
+  <table>
+    <tr><th>Port</th><th>Protocol</th><th>Direction</th><th>Service</th><th>Description</th></tr>
+    <tr><td><code>3000</code></td><td>HTTP</td><td>MeLE → clients</td><td>REST API + Static UI</td><td>Axum server: health, sensing, model, recording, training endpoints</td></tr>
+    <tr><td><code>3001</code></td><td>WebSocket</td><td>MeLE → clients</td><td>Real-time stream</td><td>/ws/sensing (SensingUpdate), /api/v1/stream/pose (PoseData)</td></tr>
+    <tr><td><code>5005</code></td><td>UDP</td><td>ESP32 → MeLE</td><td>CSI ingest</td><td>ADR-018 binary frames, magic 0xC5110001</td></tr>
+    <tr><td><code>8080</code></td><td>HTTP</td><td>MeLE → clients</td><td>Python sensing UI</td><td>Alternative Python-based UI (docker-compose service)</td></tr>
+    <tr><td><code>8765</code></td><td>WebSocket</td><td>MeLE → clients</td><td>Python WS</td><td>Python sensing server WebSocket</td></tr>
+    <tr><td><code>80</code></td><td>HTTP</td><td>ESP32 → local</td><td>OTA + WASM upload</td><td>Per-node HTTP server for firmware updates and WASM module deployment</td></tr>
+  </table>
+
+  <h2>WiFi Configuration</h2>
+  <table>
+    <tr><th>Parameter</th><th>Value</th></tr>
+    <tr><td>SSID</td><td><code>HeartBeatz</code> (configurable on router)</td></tr>
+    <tr><td>Security</td><td>WPA2-PSK</td></tr>
+    <tr><td>2.4GHz Band</td><td>Used by ESP32 nodes for CSI capture</td></tr>
+    <tr><td>5GHz Band</td><td>Available for demo laptop connection (higher throughput, no interference)</td></tr>
+    <tr><td>CSI Channel</td><td>Auto-detect from AP, or NVS override, or Kconfig default (ch6)</td></tr>
+    <tr><td>Promiscuous Mode</td><td>Enabled on ESP32 for reliable CSI callbacks on all frames</td></tr>
+    <tr><td>Channel Hopping</td><td>Optional: channels 1/6/11/36/40/44, configurable dwell time (min 10ms)</td></tr>
+  </table>
+</div>
+
+<!-- ==================== FIRMWARE ==================== -->
+<div id="firmware" class="view">
+  <h1>ESP32-S3 Firmware</h1>
+  <p class="subtitle">ESP-IDF v5.2, C, ADR-018 compliant — runs on Heemol ESP32-S3 N16R8</p>
+
+  <h2>Boot Sequence (app_main)</h2>
+  <p>The firmware initializes 12 subsystems in order. Each is fault-tolerant — failures log warnings but don't halt boot:</p>
+
+  <div class="pipeline">
+    <div class="pipeline-stage"><div class="stage-num">1</div><div><div class="stage-name">NVS Flash Init</div><div class="stage-desc">Initialize non-volatile storage. Auto-erases on version mismatch.</div></div></div>
+    <div class="pipeline-stage"><div class="stage-num">2</div><div><div class="stage-name">Load NVS Config</div><div class="stage-desc">nvs_config_load() — reads 30+ fields from NVS namespace "csi_cfg", falls back to Kconfig defaults.</div></div></div>
+    <div class="pipeline-stage"><div class="stage-num">3</div><div><div class="stage-name">WiFi STA Init</div><div class="stage-desc">wifi_init_sta() — connects to HeartBeatz network, 10 retries, WPA2-PSK (or open if no password).</div></div></div>
+    <div class="pipeline-stage"><div class="stage-num">4</div><div><div class="stage-name">UDP Sender Init</div><div class="stage-desc">stream_sender_init_with(target_ip, target_port) — opens UDP socket to MeLE, ENOMEM backoff 100ms.</div></div></div>
+    <div class="pipeline-stage"><div class="stage-num">5</div><div><div class="stage-name">CSI Collection</div><div class="stage-desc">csi_collector_init() — enables promiscuous mode, registers CSI callback, configures LLTF/HTLTF/STBC, 50Hz rate limiter.</div></div></div>
+    <div class="pipeline-stage"><div class="stage-num">6</div><div><div class="stage-name">Edge Processing</div><div class="stage-desc">edge_processing_init() — configurable tier (0-3), presence/fall thresholds, vital sign window (256 samples).</div></div></div>
+    <div class="pipeline-stage"><div class="stage-num">7</div><div><div class="stage-name">OTA Server</div><div class="stage-desc">ota_update_init_ex() — HTTP server for firmware updates. Shares httpd_handle with WASM upload.</div></div></div>
+    <div class="pipeline-stage"><div class="stage-num">8</div><div><div class="stage-name">WASM Runtime</div><div class="stage-desc">wasm_runtime_init() — WASM3 interpreter for user-deployed sensing modules. Periodic on_timer() callback (default 1s).</div></div></div>
+    <div class="pipeline-stage"><div class="stage-num">9</div><div><div class="stage-name">mmWave Sensor</div><div class="stage-desc">mmwave_sensor_init() — auto-detect radar sensor on UART. Optional complementary sensing. Graceful skip if absent.</div></div></div>
+    <div class="pipeline-stage"><div class="stage-num">10</div><div><div class="stage-name">Swarm Bridge</div><div class="stage-desc">swarm_bridge_init() — connects to Cognitum Seed (if URL configured). Heartbeat + ingest intervals.</div></div></div>
+    <div class="pipeline-stage"><div class="stage-num">11</div><div><div class="stage-name">Power Management</div><div class="stage-desc">power_mgmt_init(duty_cycle) — configurable duty cycle 0-100%. Manages sleep/wake for battery life.</div></div></div>
+    <div class="pipeline-stage"><div class="stage-num">12</div><div><div class="stage-name">Display Task</div><div class="stage-desc">display_task_start() — AMOLED display (if CONFIG_DISPLAY_ENABLE). Shows status on node's local display.</div></div></div>
+  </div>
+
+  <h2>NVS Configuration (nvs_config_t)</h2>
+  <p>30+ runtime-configurable fields, stored in NVS namespace <code class="inline-code">"csi_cfg"</code>. Set via <code class="inline-code">provision.py</code> CLI tool.</p>
+
+  <div class="two-col">
+    <div>
+      <h3>Network Settings</h3>
+      <table>
+        <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+        <tr><td><code>wifi_ssid</code></td><td>Kconfig</td><td>WiFi SSID to connect to</td></tr>
+        <tr><td><code>wifi_password</code></td><td>Kconfig</td><td>WiFi password (empty = open)</td></tr>
+        <tr><td><code>target_ip</code></td><td>Kconfig</td><td>UDP target (MeLE IP)</td></tr>
+        <tr><td><code>target_port</code></td><td>5005</td><td>UDP target port</td></tr>
+        <tr><td><code>node_id</code></td><td>Kconfig</td><td>Node identifier (0-255)</td></tr>
+      </table>
+
+      <h3>Channel Hopping (ADR-029)</h3>
+      <table>
+        <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+        <tr><td><code>channel_hop_count</code></td><td>1</td><td>1 = single-channel (no hop)</td></tr>
+        <tr><td><code>channel_list[]</code></td><td>[ch6]</td><td>Up to 6 channels</td></tr>
+        <tr><td><code>dwell_ms</code></td><td>50</td><td>Time per channel (min 10ms)</td></tr>
+        <tr><td><code>tdm_slot_index</code></td><td>0</td><td>Time-division slot</td></tr>
+        <tr><td><code>tdm_node_count</code></td><td>1</td><td>Total nodes in TDM</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>Edge Processing (ADR-039)</h3>
+      <table>
+        <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+        <tr><td><code>edge_tier</code></td><td>2</td><td>Processing tier (0=off, 3=full)</td></tr>
+        <tr><td><code>presence_thresh</code></td><td>0.0</td><td>0 = auto-calibrate</td></tr>
+        <tr><td><code>fall_thresh</code></td><td>15.0</td><td>Fall detection threshold</td></tr>
+        <tr><td><code>vital_window</code></td><td>256</td><td>Samples for vital analysis</td></tr>
+        <tr><td><code>vital_interval_ms</code></td><td>1000</td><td>Vital signs update rate</td></tr>
+        <tr><td><code>top_k_count</code></td><td>8</td><td>Top-K subcarrier selection</td></tr>
+        <tr><td><code>power_duty</code></td><td>100</td><td>Power duty cycle (0-100%)</td></tr>
+      </table>
+
+      <h3>MAC Filter (ADR-060)</h3>
+      <table>
+        <tr><th>Field</th><th>Default</th><th>Description</th></tr>
+        <tr><td><code>filter_mac[6]</code></td><td>unset</td><td>Only process frames from this MAC</td></tr>
+        <tr><td><code>filter_mac_set</code></td><td>false</td><td>Whether filter is active</td></tr>
+        <tr><td><code>csi_channel</code></td><td>0</td><td>0 = auto-detect from AP</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2>CSI Collector Detail</h2>
+  <p>The CSI callback fires on every WiFi frame received in promiscuous mode (100-500+ times/sec). Rate limiting caps UDP output to 50Hz:</p>
+  <pre><code><span class="comment">// Rate-limit: 20ms = 50Hz max send rate</span>
+<span class="keyword">#define</span> CSI_MIN_SEND_INTERVAL_US  (<span class="number">20</span> * <span class="number">1000</span>)
+
+<span class="comment">// CSI config enables all LTF types for maximum subcarrier data</span>
+wifi_csi_config_t csi_config = {
+    .lltf_en = <span class="number">true</span>,           <span class="comment">// Legacy Long Training Field</span>
+    .htltf_en = <span class="number">true</span>,          <span class="comment">// HT Long Training Field</span>
+    .stbc_htltf2_en = <span class="number">true</span>,    <span class="comment">// STBC HT-LTF2</span>
+    .ltf_merge_en = <span class="number">true</span>,      <span class="comment">// Merge LTF types</span>
+    .channel_filter_en = <span class="number">false</span>, <span class="comment">// Raw, unfiltered</span>
+};
+
+<span class="comment">// Promiscuous filter: management + data frames</span>
+filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT | WIFI_PROMIS_FILTER_MASK_DATA;</code></pre>
+
+  <h2>Source Files</h2>
+  <table>
+    <tr><th>File</th><th>Lines</th><th>Purpose</th></tr>
+    <tr><td><code>main.c</code></td><td>290</td><td>Boot sequence, subsystem orchestration</td></tr>
+    <tr><td><code>csi_collector.c</code></td><td>421</td><td>CSI callback, ADR-018 serialization, channel hopping</td></tr>
+    <tr><td><code>stream_sender.c</code></td><td>117</td><td>UDP socket, ENOMEM backoff</td></tr>
+    <tr><td><code>nvs_config.c</code></td><td>333</td><td>30+ config fields, NVS read/write</td></tr>
+    <tr><td><code>edge_processing.c</code></td><td>—</td><td>On-device presence, fall, vital signs</td></tr>
+    <tr><td><code>ota_update.c</code></td><td>—</td><td>HTTP firmware update server</td></tr>
+    <tr><td><code>wasm_runtime.c</code></td><td>—</td><td>WASM3 interpreter + timer</td></tr>
+    <tr><td><code>power_mgmt.c</code></td><td>—</td><td>Sleep/wake duty cycling</td></tr>
+    <tr><td><code>mmwave_sensor.c</code></td><td>—</td><td>Optional radar sensor</td></tr>
+    <tr><td><code>swarm_bridge.c</code></td><td>—</td><td>Cognitum Seed connectivity</td></tr>
+  </table>
+</div>
+
+<!-- ==================== API ==================== -->
+<div id="api" class="view">
+  <h1>Ports &amp; APIs</h1>
+  <p class="subtitle">Complete REST API reference — 40+ endpoints on Axum</p>
+
+  <div class="tabs">
+    <button class="tab active" onclick="showTab(this,'api-health')">Health</button>
+    <button class="tab" onclick="showTab(this,'api-sensing')">Sensing</button>
+    <button class="tab" onclick="showTab(this,'api-pose')">Pose</button>
+    <button class="tab" onclick="showTab(this,'api-model')">Model</button>
+    <button class="tab" onclick="showTab(this,'api-recording')">Recording</button>
+    <button class="tab" onclick="showTab(this,'api-training')">Training</button>
+    <button class="tab" onclick="showTab(this,'api-ws')">WebSocket</button>
+  </div>
+
+  <div id="api-health" class="tab-content active">
+    <h3>Health &amp; Info Endpoints</h3>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Handler</th><th>Description</th></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/</code></td><td>info_page</td><td>Landing page with server info</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/health</code></td><td>health</td><td>Basic health check</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/health/health</code></td><td>health_system</td><td>Detailed system health</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/health/live</code></td><td>health_live</td><td>Liveness probe (for Docker/K8s)</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/health/ready</code></td><td>health_ready</td><td>Readiness probe</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/health/version</code></td><td>health_version</td><td>Version and build info</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/health/metrics</code></td><td>health_metrics</td><td>Prometheus-style metrics</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/info</code></td><td>api_info</td><td>API info + capabilities</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/status</code></td><td>health_ready</td><td>Alias for readiness</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/metrics</code></td><td>health_metrics</td><td>Alias for metrics</td></tr>
+    </table>
+  </div>
+
+  <div id="api-sensing" class="tab-content">
+    <h3>Sensing Endpoints</h3>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Handler</th><th>Description</th></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/sensing/latest</code></td><td>latest</td><td>Latest SensingUpdate frame (JSON)</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/vital-signs</code></td><td>vital_signs_endpoint</td><td>Current vital signs (BR, HR, confidence)</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/edge-vitals</code></td><td>edge_vitals_endpoint</td><td>Edge-computed vitals from ESP32 nodes</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/wasm-events</code></td><td>wasm_events_endpoint</td><td>Events from ESP32 WASM modules</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/stream/status</code></td><td>stream_status</td><td>Current stream state + connected clients</td></tr>
+    </table>
+  </div>
+
+  <div id="api-pose" class="tab-content">
+    <h3>Pose Endpoints</h3>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Handler</th><th>Description</th></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/pose/current</code></td><td>pose_current</td><td>Current pose estimate (COCO-17 keypoints)</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/pose/stats</code></td><td>pose_stats</td><td>Pose detection statistics</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/pose/zones/summary</code></td><td>pose_zones_summary</td><td>Per-zone occupancy summary</td></tr>
+    </table>
+  </div>
+
+  <div id="api-model" class="tab-content">
+    <h3>Model Management Endpoints</h3>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Handler</th><th>Description</th></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/model/info</code></td><td>model_info</td><td>Active RVF model metadata</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/model/layers</code></td><td>model_layers</td><td>Model layer architecture</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/model/segments</code></td><td>model_segments</td><td>DensePose body segments</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/model/sona/profiles</code></td><td>sona_profiles</td><td>Available SONA profiles</td></tr>
+      <tr><td><span class="status-badge orange">POST</span></td><td><code>/api/v1/model/sona/activate</code></td><td>sona_activate</td><td>Activate a SONA profile</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/models</code></td><td>list_models</td><td>List available models</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/models/active</code></td><td>get_active_model</td><td>Currently loaded model</td></tr>
+      <tr><td><span class="status-badge orange">POST</span></td><td><code>/api/v1/models/load</code></td><td>load_model</td><td>Load a model into memory</td></tr>
+      <tr><td><span class="status-badge orange">POST</span></td><td><code>/api/v1/models/unload</code></td><td>unload_model</td><td>Unload active model</td></tr>
+      <tr><td><span class="status-badge red">DELETE</span></td><td><code>/api/v1/models/{id}</code></td><td>delete_model</td><td>Delete a stored model</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/models/lora/profiles</code></td><td>list_lora_profiles</td><td>LoRA fine-tuning profiles</td></tr>
+      <tr><td><span class="status-badge orange">POST</span></td><td><code>/api/v1/models/lora/activate</code></td><td>activate_lora_profile</td><td>Activate LoRA adapter</td></tr>
+    </table>
+  </div>
+
+  <div id="api-recording" class="tab-content">
+    <h3>Recording Endpoints</h3>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Handler</th><th>Description</th></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/recording/list</code></td><td>list_recordings</td><td>List saved recordings</td></tr>
+      <tr><td><span class="status-badge orange">POST</span></td><td><code>/api/v1/recording/start</code></td><td>start_recording</td><td>Start recording CSI data</td></tr>
+      <tr><td><span class="status-badge orange">POST</span></td><td><code>/api/v1/recording/stop</code></td><td>stop_recording</td><td>Stop recording</td></tr>
+      <tr><td><span class="status-badge red">DELETE</span></td><td><code>/api/v1/recording/{id}</code></td><td>delete_recording</td><td>Delete a recording</td></tr>
+    </table>
+  </div>
+
+  <div id="api-training" class="tab-content">
+    <h3>Training &amp; Adaptive Endpoints</h3>
+    <table>
+      <tr><th>Method</th><th>Path</th><th>Handler</th><th>Description</th></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/train/status</code></td><td>train_status</td><td>Current training status</td></tr>
+      <tr><td><span class="status-badge orange">POST</span></td><td><code>/api/v1/train/start</code></td><td>train_start</td><td>Start model training</td></tr>
+      <tr><td><span class="status-badge orange">POST</span></td><td><code>/api/v1/train/stop</code></td><td>train_stop</td><td>Stop training</td></tr>
+      <tr><td><span class="status-badge orange">POST</span></td><td><code>/api/v1/adaptive/train</code></td><td>adaptive_train</td><td>Train adaptive classifier</td></tr>
+      <tr><td><span class="status-badge green">GET</span></td><td><code>/api/v1/adaptive/status</code></td><td>adaptive_status</td><td>Adaptive classifier state</td></tr>
+      <tr><td><span class="status-badge orange">POST</span></td><td><code>/api/v1/adaptive/unload</code></td><td>adaptive_unload</td><td>Unload adaptive model</td></tr>
+    </table>
+  </div>
+
+  <div id="api-ws" class="tab-content">
+    <h3>WebSocket Endpoints</h3>
+    <table>
+      <tr><th>Path</th><th>Port</th><th>Handler</th><th>Protocol</th></tr>
+      <tr><td><code>/ws/sensing</code></td><td>3001</td><td>ws_sensing_handler</td><td>Subscribe to broadcast → receives SensingUpdate JSON frames in real-time</td></tr>
+      <tr><td><code>/api/v1/stream/pose</code></td><td>3001</td><td>ws_pose_handler</td><td>Pose-specific stream. Sends: connection_established, pose_data. Receives: ping/pong</td></tr>
+      <tr><td><code>/ws/train/progress</code></td><td>3001</td><td>ws_train_progress</td><td>Training progress: epoch, batch, loss, PCK, OKS, LR, phase</td></tr>
+    </table>
+
+    <h3>WebSocket Message Format (/ws/sensing)</h3>
+    <pre><code>{
+  <span class="string">"msg_type"</span>: <span class="string">"sensing_update"</span>,
+  <span class="string">"timestamp"</span>: <span class="number">1711547823.456</span>,
+  <span class="string">"source"</span>: <span class="string">"esp32"</span>,
+  <span class="string">"tick"</span>: <span class="number">4521</span>,
+  <span class="string">"nodes"</span>: [{ <span class="string">"id"</span>: <span class="number">0</span>, <span class="string">"rssi"</span>: <span class="number">-42</span>, <span class="string">"csi_amplitude"</span>: [...] }],
+  <span class="string">"features"</span>: { <span class="string">"mean_rssi"</span>: <span class="number">-45.2</span>, <span class="string">"variance"</span>: <span class="number">12.8</span>, <span class="string">"motion_band_power"</span>: <span class="number">0.34</span> },
+  <span class="string">"vital_signs"</span>: { <span class="string">"breathing_rate_bpm"</span>: <span class="number">16.2</span>, <span class="string">"heart_rate_bpm"</span>: <span class="number">72.0</span>, <span class="string">"breathing_confidence"</span>: <span class="number">0.87</span> },
+  <span class="string">"signal_field"</span>: { <span class="string">"width"</span>: <span class="number">20</span>, <span class="string">"height"</span>: <span class="number">20</span>, <span class="string">"values"</span>: [...] },
+  <span class="string">"persons"</span>: [{ <span class="string">"id"</span>: <span class="number">1</span>, <span class="string">"position"</span>: [<span class="number">2.1</span>, <span class="number">0</span>, <span class="number">1.5</span>], <span class="string">"motion_score"</span>: <span class="number">0.6</span> }]
+}</code></pre>
+  </div>
+</div>
+
+<!-- ==================== UI ==================== -->
+<div id="ui" class="view">
+  <h1>UI &amp; Visualization</h1>
+  <p class="subtitle">Three.js Observatory — immersive real-time sensing visualization</p>
+
+  <h2>Observatory Scene</h2>
+  <p>The primary visualization is a WebGL 3D scene rendered with Three.js. It shows wireframe human figures in a virtual room, with WiFi signal overlays and real-time vital signs HUD.</p>
+
+  <div class="two-col">
+    <div>
+      <h3>Scene Setup</h3>
+      <table>
+        <tr><th>Element</th><th>Detail</th></tr>
+        <tr><td>Room</td><td>6m wide with grid, wireframe edges, reflective floor</td></tr>
+        <tr><td>Camera</td><td>Perspective FOV 50°, position (6, 5, 8), auto-orbit</td></tr>
+        <tr><td>Lighting</td><td>5-light system: ambient, hemisphere, key, fill, rim</td></tr>
+        <tr><td>Post-processing</td><td>Bloom, vignette, grain, chromatic aberration</td></tr>
+        <tr><td>Quality</td><td>3 adaptive levels based on FPS</td></tr>
+        <tr><td>Router model</td><td>3 antennas + LED indicator at (-4, 0.92, -3)</td></tr>
+      </table>
+
+      <h3>Figure Rendering</h3>
+      <table>
+        <tr><th>Feature</th><th>Detail</th></tr>
+        <tr><td>Pool size</td><td>4 figures max (configurable)</td></tr>
+        <tr><td>Skeleton</td><td>17 COCO keypoints + 16 bone cylinders</td></tr>
+        <tr><td>Bone taper</td><td>Thicker at torso (0.12), thinner at limbs (0.04-0.07)</td></tr>
+        <tr><td>Aura glow</td><td>Sphere around each figure</td></tr>
+        <tr><td>Breathing pulse</td><td>±0.1m amplitude modulation per joint</td></tr>
+        <tr><td>Trail particles</td><td>200 particles, age and fade</td></tr>
+      </table>
+    </div>
+    <div>
+      <h3>HUD Elements</h3>
+      <table>
+        <tr><th>Panel</th><th>Content</th></tr>
+        <tr><td>Left: Vitals</td><td>HR (color-coded: green 60-100, amber 50-60/100-130, red &lt;50/&gt;130), BR, confidence bars</td></tr>
+        <tr><td>Right: Signal</td><td>RSSI dBm, variance, motion level, person count dots</td></tr>
+        <tr><td>Top bar</td><td>Source badge (demo/ws), scenario selector, FPS, settings gear</td></tr>
+        <tr><td>Bottom</td><td>80-point RSSI sparkline canvas</td></tr>
+      </table>
+
+      <h3>Visual Effects</h3>
+      <table>
+        <tr><th>Effect</th><th>Detail</th></tr>
+        <tr><td>WiFi waves</td><td>5 concentric spheres (0.8-4.8m radius), expand + fade</td></tr>
+        <tr><td>Dot-matrix mist</td><td>800 shader particles following body shape</td></tr>
+        <tr><td>Signal field</td><td>20×20 floor grid, color-mapped signal strength</td></tr>
+      </table>
+    </div>
+  </div>
+
+  <h2>Keyboard Controls</h2>
+  <table>
+    <tr><th>Key</th><th>Action</th></tr>
+    <tr><td><span class="kbd">A</span></td><td>Toggle autopilot camera orbit</td></tr>
+    <tr><td><span class="kbd">D</span></td><td>Cycle to next demo scenario</td></tr>
+    <tr><td><span class="kbd">F</span></td><td>Toggle FPS counter</td></tr>
+    <tr><td><span class="kbd">S</span></td><td>Open/close settings dialog</td></tr>
+    <tr><td><span class="kbd">Space</span></td><td>Pause/resume demo playback</td></tr>
+  </table>
+
+  <h2>Visual Presets</h2>
+  <table>
+    <tr><th>Preset</th><th>Style</th><th>Bloom</th><th>Wire Color</th></tr>
+    <tr><td>Foundation</td><td>Default balanced</td><td>0.08</td><td>#00d878 (green)</td></tr>
+    <tr><td>Cinematic</td><td>High bloom, heavy vignette</td><td>1.2</td><td>—</td></tr>
+    <tr><td>Minimal</td><td>Clean, low bloom</td><td>0.3</td><td>Neon</td></tr>
+    <tr><td>Neon</td><td>Extreme bloom, chromatic</td><td>2.5</td><td>Bright</td></tr>
+    <tr><td>Medical</td><td>Professional cyan</td><td>—</td><td>#00ccff (cyan)</td></tr>
+  </table>
+
+  <h2>Demo Scenarios (12 Built-in)</h2>
+  <div class="scenario-grid">
+    <div class="scenario-card"><div class="sc-num">#1</div><div class="sc-name">Empty Room</div><div class="sc-desc">Environmental noise, 2.4GHz microwave interference, HVAC cycling, day/night RSSI drift</div><div class="sc-modules">environment</div></div>
+    <div class="scenario-card"><div class="sc-num">#2</div><div class="sc-name">Single Breathing</div><div class="sc-desc">Breathing ~16 BPM, HRV (heart rate variability), respiratory sinus arrhythmia</div><div class="sc-modules">vital_trend, cardiac_detail</div></div>
+    <div class="scenario-card"><div class="sc-num">#3</div><div class="sc-name">Two Walking</div><div class="sc-desc">Figure-8 and ellipse paths, collision avoidance, phone pause behavior</div><div class="sc-modules">person_match, tracking</div></div>
+    <div class="scenario-card"><div class="sc-num">#4</div><div class="sc-name">Fall Event</div><div class="sc-desc">Pre-fall stumble (3-5s), impact spike, micro-movements, shock HR elevation</div><div class="sc-modules">impact_detection, recovery_analysis</div></div>
+    <div class="scenario-card"><div class="sc-num">#5</div><div class="sc-name">Sleep Monitoring</div><div class="sc-desc">Supine with micro-breathing, position shifts, sleep stage markers</div><div class="sc-modules">sleep_stage, breathing_quality</div></div>
+    <div class="scenario-card"><div class="sc-num">#6</div><div class="sc-name">Intrusion Detect</div><div class="sc-desc">Rapid unauthorized entry, presence spike, door sensor correlation</div><div class="sc-modules">zone_breach, alert_trigger</div></div>
+    <div class="scenario-card"><div class="sc-num">#7</div><div class="sc-name">Gesture Control</div><div class="sc-desc">Arm raises, sweeps, hand waves with pose transitions, DTW similarity</div><div class="sc-modules">gesture_phase, dtw_similarity</div></div>
+    <div class="scenario-card"><div class="sc-num">#8</div><div class="sc-name">Crowd Occupancy</div><div class="sc-desc">4 people at desks, complex multiplex signals, occupancy estimation</div><div class="sc-modules">occupancy_count, spatial_clustering</div></div>
+    <div class="scenario-card"><div class="sc-num">#9</div><div class="sc-name">Search &amp; Rescue</div><div class="sc-desc">Through-wall survivor detection, weak signal, slow micro-movements</div><div class="sc-modules">mat_mode_active, through_wall_distance</div></div>
+    <div class="scenario-card"><div class="sc-num">#10</div><div class="sc-name">Elderly Care</div><div class="sc-desc">Gait analysis for fall risk, slower walking, periodic sitting</div><div class="sc-modules">gait_metrics, fall_risk_score</div></div>
+    <div class="scenario-card"><div class="sc-num">#11</div><div class="sc-name">Fitness Tracking</div><div class="sc-desc">High-intensity exercise, rep counting, stand→crouch→stand cycles</div><div class="sc-modules">exercise_type, rep_count</div></div>
+    <div class="scenario-card"><div class="sc-num">#12</div><div class="sc-name">Security Patrol</div><div class="sc-desc">Multi-zone presence detection, sustained walking patrols</div><div class="sc-modules">zone_occupancy, patrol_timing</div></div>
+  </div>
+
+  <h2>Pose Fusion Engine</h2>
+  <p>Separate module combining video (webcam) + WiFi CSI for enhanced pose estimation:</p>
+  <table>
+    <tr><th>Component</th><th>Purpose</th></tr>
+    <tr><td>VideoCapture</td><td>Webcam stream, canvas overlay for skeleton</td></tr>
+    <tr><td>CsiSimulator</td><td>52 subcarriers × 56 time-window, simulated CSI</td></tr>
+    <tr><td>CnnEmbedder</td><td>128-dim embeddings from each modality</td></tr>
+    <tr><td>FusionEngine</td><td>Weighted blend: 70% video / 30% CSI (configurable)</td></tr>
+    <tr><td>PoseDecoder</td><td>Fused embedding → 17 COCO keypoints</td></tr>
+  </table>
+</div>
+
+<!-- ==================== ENCLOSURE ==================== -->
+<div id="enclosure" class="view">
+  <h1>Enclosure Design</h1>
+  <p class="subtitle">Verified component dimensions — Bambu Lab H2D, PETG, Fusion 360 parametric</p>
+
+  <h2>Component Dimensions (Verified)</h2>
+  <div class="dim-grid">
+    <div class="dim-card">
+      <div class="dim-name">MeLE Overclock4C (N100)</div>
+      <div class="dim-size">131 × 81 × 18.3 mm</div>
+      <div class="dim-weight">317.5g</div>
+      <div class="dim-note">Passive cooling, needs bottom ventilation. 2× GbE on one side, USB/HDMI on other.</div>
+    </div>
+    <div class="dim-card">
+      <div class="dim-name">GL.iNet MT3000</div>
+      <div class="dim-size">120 × 83 × 34 mm</div>
+      <div class="dim-weight">196g</div>
+      <div class="dim-note">Built-in antennas, USB-C power. Needs ventilation for heat.</div>
+    </div>
+    <div class="dim-card">
+      <div class="dim-name">UGREEN 25,000mAh</div>
+      <div class="dim-size">155 × 54 × 51 mm</div>
+      <div class="dim-weight">609g</div>
+      <div class="dim-note">Heaviest component. Button + LED indicators on one end. USB-C PD + USB-A ports.</div>
+    </div>
+    <div class="dim-card">
+      <div class="dim-name">VoCore 5" Touchscreen</div>
+      <div class="dim-size">119.3 × 68.7 × 3.6 mm</div>
+      <div class="dim-weight">~80g (est.)</div>
+      <div class="dim-note">USB-C connection (NOT HDMI!). Mounts on enclosure lid or side panel. Touch-capable.</div>
+    </div>
+    <div class="dim-card">
+      <div class="dim-name">ESP32-S3 DevKitC-1</div>
+      <div class="dim-size">70 × 28 × 8 mm</div>
+      <div class="dim-weight">~10g</div>
+      <div class="dim-note">USB-C for power/programming. Antenna at one end — keep unobstructed.</div>
+    </div>
+    <div class="dim-card">
+      <div class="dim-name">TECNOIOT 18650 UPS + Cells</div>
+      <div class="dim-size">~100 × 65 × 35 mm assembled</div>
+      <div class="dim-weight">~120g (with 2× cells)</div>
+      <div class="dim-note">UPS board: 90×22×28.5mm. Each 18650: 18mm Ø × 65mm. Parallel in battery box.</div>
+    </div>
+  </div>
+
+  <h2>Main Box — Internal Layout (Top View)</h2>
+  <div class="enclosure-svg">
+    <svg viewBox="0 0 520 360" width="520" height="360" xmlns="http://www.w3.org/2000/svg">
+      <!-- Enclosure outer wall -->
+      <rect x="10" y="10" width="500" height="340" rx="8" fill="none" stroke="#4f8cff" stroke-width="2"/>
+      <text x="260" y="30" text-anchor="middle" fill="#8892a4" font-size="11" font-family="monospace">Main Box Enclosure — ~200 × 165 × 60mm (internal)</text>
+
+      <!-- Power bank (bottom layer, largest footprint) -->
+      <rect x="20" y="200" width="190" height="66" rx="4" fill="rgba(79,140,255,0.1)" stroke="#4f8cff" stroke-width="1.5"/>
+      <text x="115" y="228" text-anchor="middle" fill="#4f8cff" font-size="10" font-family="monospace">UGREEN 25,000mAh</text>
+      <text x="115" y="244" text-anchor="middle" fill="#8892a4" font-size="9" font-family="monospace">155 × 54 × 51mm</text>
+      <text x="115" y="258" text-anchor="middle" fill="#f59e0b" font-size="9" font-family="monospace">609g — heaviest</text>
+
+      <!-- MeLE N100 -->
+      <rect x="20" y="50" width="160" height="100" rx="4" fill="rgba(255,107,79,0.1)" stroke="#ff6b4f" stroke-width="1.5"/>
+      <text x="100" y="90" text-anchor="middle" fill="#ff6b4f" font-size="10" font-family="monospace">MeLE N100</text>
+      <text x="100" y="106" text-anchor="middle" fill="#8892a4" font-size="9" font-family="monospace">131 × 81 × 18.3mm</text>
+      <text x="100" y="120" text-anchor="middle" fill="#8892a4" font-size="8" font-family="monospace">⬆ ETH ports this side</text>
+      <text x="100" y="134" text-anchor="middle" fill="#8892a4" font-size="8" font-family="monospace">⬇ USB/HDMI this side</text>
+
+      <!-- GL.iNet Router -->
+      <rect x="200" y="50" width="148" height="102" rx="4" fill="rgba(52,211,153,0.1)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="274" y="90" text-anchor="middle" fill="#34d399" font-size="10" font-family="monospace">GL.iNet MT3000</text>
+      <text x="274" y="106" text-anchor="middle" fill="#8892a4" font-size="9" font-family="monospace">120 × 83 × 34mm</text>
+      <text x="274" y="120" text-anchor="middle" fill="#8892a4" font-size="8" font-family="monospace">WiFi antennas internal</text>
+
+      <!-- VoCore display (on lid) -->
+      <rect x="230" y="200" width="146" height="84" rx="4" fill="rgba(245,158,11,0.1)" stroke="#f59e0b" stroke-width="1.5" stroke-dasharray="4,3"/>
+      <text x="303" y="236" text-anchor="middle" fill="#f59e0b" font-size="10" font-family="monospace">VoCore 5" Display</text>
+      <text x="303" y="252" text-anchor="middle" fill="#8892a4" font-size="9" font-family="monospace">119.3 × 68.7mm</text>
+      <text x="303" y="266" text-anchor="middle" fill="#8892a4" font-size="8" font-family="monospace">(mounted on lid, dashed)</text>
+
+      <!-- Cable routing area -->
+      <rect x="365" y="50" width="135" height="230" rx="4" fill="rgba(167,139,250,0.05)" stroke="#2a2d3a" stroke-width="1" stroke-dasharray="3,3"/>
+      <text x="432" y="100" text-anchor="middle" fill="#a78bfa" font-size="9" font-family="monospace">Cable routing</text>
+      <text x="432" y="115" text-anchor="middle" fill="#8892a4" font-size="8" font-family="monospace">ETH patch cable</text>
+      <text x="432" y="130" text-anchor="middle" fill="#8892a4" font-size="8" font-family="monospace">USB-C PD (MeLE)</text>
+      <text x="432" y="145" text-anchor="middle" fill="#8892a4" font-size="8" font-family="monospace">USB-A 5V (Router)</text>
+      <text x="432" y="160" text-anchor="middle" fill="#8892a4" font-size="8" font-family="monospace">USB-C (VoCore)</text>
+
+      <!-- External port cutouts -->
+      <rect x="0" y="290" width="10" height="25" fill="#f59e0b" rx="2"/>
+      <text x="15" y="306" fill="#f59e0b" font-size="8" font-family="monospace">USB-C debug</text>
+
+      <rect x="0" y="320" width="10" height="15" fill="#4f8cff" rx="2"/>
+      <text x="15" y="332" fill="#4f8cff" font-size="8" font-family="monospace">Power button</text>
+
+      <!-- Scale reference -->
+      <line x1="20" y1="340" x2="180" y2="340" stroke="#8892a4" stroke-width="1"/>
+      <text x="100" y="355" text-anchor="middle" fill="#8892a4" font-size="8" font-family="monospace">~155mm (power bank width)</text>
+    </svg>
+  </div>
+
+  <h2>Sensor Node — Internal Layout (Top View)</h2>
+  <div class="enclosure-svg">
+    <svg viewBox="0 0 400 200" width="400" height="200" xmlns="http://www.w3.org/2000/svg">
+      <!-- Node enclosure -->
+      <rect x="10" y="10" width="380" height="180" rx="8" fill="none" stroke="#a78bfa" stroke-width="2"/>
+      <text x="200" y="28" text-anchor="middle" fill="#8892a4" font-size="11" font-family="monospace">Sensor Node — ~120 × 75 × 40mm</text>
+
+      <!-- ESP32 board -->
+      <rect x="20" y="45" width="86" height="34" rx="3" fill="rgba(167,139,250,0.1)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="63" y="60" text-anchor="middle" fill="#a78bfa" font-size="9" font-family="monospace">ESP32-S3</text>
+      <text x="63" y="72" text-anchor="middle" fill="#8892a4" font-size="8" font-family="monospace">70 × 28mm</text>
+
+      <!-- Antenna zone -->
+      <rect x="20" y="40" width="20" height="44" rx="2" fill="none" stroke="#ff6b4f" stroke-width="1" stroke-dasharray="3,2"/>
+      <text x="10" y="110" fill="#ff6b4f" font-size="7" font-family="monospace" transform="rotate(-90, 10, 110)">antenna zone</text>
+
+      <!-- UPS board -->
+      <rect x="120" y="40" width="110" height="27" rx="3" fill="rgba(52,211,153,0.1)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="175" y="56" text-anchor="middle" fill="#34d399" font-size="9" font-family="monospace">TECNOIOT UPS</text>
+      <text x="175" y="64" text-anchor="middle" fill="#8892a4" font-size="8" font-family="monospace">90 × 22mm</text>
+
+      <!-- 18650 cells -->
+      <rect x="120" y="80" width="80" height="22" rx="10" fill="rgba(245,158,11,0.1)" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="160" y="94" text-anchor="middle" fill="#f59e0b" font-size="8" font-family="monospace">18650 cell ×2</text>
+
+      <rect x="120" y="110" width="80" height="22" rx="10" fill="rgba(245,158,11,0.1)" stroke="#f59e0b" stroke-width="1.5"/>
+      <text x="160" y="124" text-anchor="middle" fill="#f59e0b" font-size="8" font-family="monospace">18650 cell ×2</text>
+
+      <!-- USB port access -->
+      <rect x="250" y="45" width="8" height="14" fill="#4f8cff" rx="1"/>
+      <text x="265" y="55" fill="#4f8cff" font-size="7" font-family="monospace">USB-C charge</text>
+
+      <!-- Status LED -->
+      <circle cx="280" cy="90" r="4" fill="none" stroke="#34d399" stroke-width="1"/>
+      <text x="290" y="93" fill="#34d399" font-size="7" font-family="monospace">Status LED</text>
+
+      <!-- Mounting holes -->
+      <circle cx="30" cy="165" r="3" fill="none" stroke="#8892a4" stroke-width="1"/>
+      <circle cx="360" cy="165" r="3" fill="none" stroke="#8892a4" stroke-width="1"/>
+      <circle cx="30" cy="45" r="3" fill="none" stroke="#8892a4" stroke-width="1"/>
+      <circle cx="360" cy="45" r="3" fill="none" stroke="#8892a4" stroke-width="1"/>
+      <text x="200" y="175" text-anchor="middle" fill="#8892a4" font-size="8" font-family="monospace">M3 mounting holes × 4</text>
+    </svg>
+  </div>
+
+  <h2>Enclosure Design Parameters (Fusion 360)</h2>
+  <table>
+    <tr><th>Parameter</th><th>Main Box</th><th>Sensor Node</th><th>Notes</th></tr>
+    <tr><td>External dims</td><td><code>210 × 175 × 65mm</code></td><td><code>120 × 75 × 42mm</code></td><td>5mm wall thickness</td></tr>
+    <tr><td>Wall thickness</td><td><code>3mm</code></td><td><code>2.5mm</code></td><td>PETG structural</td></tr>
+    <tr><td>Corner radius</td><td><code>5mm</code></td><td><code>4mm</code></td><td>Exterior corners</td></tr>
+    <tr><td>Vent holes</td><td>Bottom grid + side slots</td><td>Antenna end open</td><td>Passive airflow</td></tr>
+    <tr><td>Display cutout</td><td><code>119.5 × 69mm</code></td><td>—</td><td>VoCore on lid, 0.1mm tolerance</td></tr>
+    <tr><td>USB port cutout</td><td><code>12 × 6mm</code></td><td><code>12 × 6mm</code></td><td>USB-C access for debug/charge</td></tr>
+    <tr><td>Lid attachment</td><td>M3 heat-set inserts × 4</td><td>Snap-fit clips × 2</td><td>Main box: screwed, nodes: tool-free</td></tr>
+    <tr><td>Material</td><td>PETG</td><td>PETG</td><td>Bambu Lab H2D, 0.2mm layer height</td></tr>
+    <tr><td>Infill</td><td>20% gyroid</td><td>15% gyroid</td><td>Balance of strength and weight</td></tr>
+    <tr><td>Print orientation</td><td>Lid up (no supports)</td><td>Lid up (no supports)</td><td>Bottom surface is print bed face</td></tr>
+  </table>
+
+  <h2>Weight Budget</h2>
+  <table>
+    <tr><th>Component</th><th>Weight</th><th>Cumulative</th></tr>
+    <tr><td>UGREEN Power Bank</td><td>609g</td><td>609g</td></tr>
+    <tr><td>MeLE N100</td><td>317.5g</td><td>926.5g</td></tr>
+    <tr><td>GL.iNet MT3000</td><td>196g</td><td>1,122.5g</td></tr>
+    <tr><td>VoCore Display</td><td>~80g</td><td>~1,202g</td></tr>
+    <tr><td>Cables + connectors</td><td>~50g</td><td>~1,252g</td></tr>
+    <tr><td>PETG enclosure (est.)</td><td>~120g</td><td><strong>~1,372g</strong></td></tr>
+  </table>
+  <p>Sensor nodes: ~140g each (ESP32 + UPS + cells + enclosure). Total system with 3 nodes: <strong>~1.8 kg</strong>.</p>
+</div>
+
+<script>
+// Navigation
+function showView(id) {
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  event.target.classList.add('active');
+}
+
+// Tabs
+function showTab(btn, id) {
+  const parent = btn.closest('.view');
+  parent.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  parent.querySelectorAll('.tab-content').forEach(tc => tc.classList.remove('active'));
+  btn.classList.add('active');
+  document.getElementById(id).classList.add('active');
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,1080 @@
+/* ==============================================================================
+   HeartBeatz UI — Kiosk Stylesheet
+   ==============================================================================
+   Designed for 1024×600 IHANFO 7" IPS touchscreen.
+   Dark theme, high contrast, touch-friendly tap targets (min 44px).
+*/
+
+:root {
+  --bg: #08090d;
+  --bg2: #0d0f16;
+  --card: #12141c;
+  --border: #1e2130;
+  --accent: #4f8cff;
+  --accent2: #ff6b4f;
+  --accent3: #34d399;
+  --accent4: #f59e0b;
+  --text: #e2e8f0;
+  --muted: #6b7280;
+  --danger: #ef4444;
+  --radius: 10px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: 'Inter', -apple-system, system-ui, sans-serif;
+  width: 1024px;
+  height: 600px;
+  overflow: hidden;
+  touch-action: pan-x;
+  user-select: none;
+}
+
+/* ---------------------------------------------------------------------------
+   Screens
+--------------------------------------------------------------------------- */
+.screen {
+  display: none;
+  width: 1024px;
+  height: 600px;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+.screen.active { display: flex; }
+
+/* Dashboard needs vertical flex layout (top bar → content → bottom bar) */
+#dashboard { flex-direction: column; }
+
+/* ---------------------------------------------------------------------------
+   Splash Screen
+--------------------------------------------------------------------------- */
+#splash {
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: radial-gradient(ellipse at center, #0d1020 0%, #08090d 70%);
+}
+.splash-center { text-align: center; }
+.splash-logo {
+  font-size: 42px;
+  font-weight: 800;
+  letter-spacing: -1px;
+  color: var(--accent);
+}
+.splash-logo span { color: var(--accent2); }
+.splash-sub {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 6px;
+}
+.splash-progress {
+  width: 200px;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  margin: 24px auto 0;
+  overflow: hidden;
+}
+.splash-bar {
+  height: 100%;
+  width: 0%;
+  background: linear-gradient(90deg, var(--accent), var(--accent2));
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+.splash-status {
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 12px;
+}
+
+/* ---------------------------------------------------------------------------
+   Setup Wizard
+--------------------------------------------------------------------------- */
+#setup {
+  flex-direction: column;
+  background: var(--bg);
+}
+.setup-step {
+  display: none;
+  flex-direction: column;
+  flex: 1;
+  padding: 24px 32px;
+}
+.setup-step.active { display: flex; }
+.setup-header h1 {
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+}
+.setup-header p {
+  font-size: 13px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* Node grid */
+.node-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 12px;
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 16px;
+  padding-bottom: 8px;
+}
+.node-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.2s;
+}
+.node-card.online { border-color: var(--accent3); }
+.node-card .node-id {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: monospace;
+}
+.node-card .node-name {
+  font-size: 15px;
+  font-weight: 600;
+}
+.node-card .node-meta {
+  font-size: 11px;
+  color: var(--muted);
+}
+.node-card .node-rssi {
+  font-size: 12px;
+  color: var(--accent);
+}
+
+/* Setup footer */
+.setup-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+.node-count {
+  font-size: 14px;
+  color: var(--muted);
+}
+.node-count span {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+/* Calibration visual */
+.calibrate-visual {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+}
+.calibrate-ring {
+  width: 180px;
+  height: 180px;
+  border: 3px solid var(--border);
+  border-radius: 50%;
+  position: relative;
+  transition: border-color 0.5s;
+}
+.calibrate-ring.active {
+  border-color: var(--accent);
+  animation: pulse-ring 2s ease-in-out infinite;
+}
+.calibrate-ring.done {
+  border-color: var(--accent3);
+}
+@keyframes pulse-ring {
+  0%, 100% { transform: scale(1); opacity: 1; }
+  50% { transform: scale(1.08); opacity: 0.7; }
+}
+.calibrate-label {
+  position: absolute;
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+/* ---------------------------------------------------------------------------
+   Buttons
+--------------------------------------------------------------------------- */
+.btn {
+  border: none;
+  border-radius: 8px;
+  padding: 12px 24px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  min-height: 44px;
+  transition: background 0.15s, transform 0.1s;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:disabled {
+  background: var(--border);
+  color: var(--muted);
+  cursor: default;
+}
+.btn-accent {
+  background: var(--accent2);
+  color: #fff;
+}
+.btn-muted {
+  background: var(--card);
+  color: var(--muted);
+  border: 1px solid var(--border);
+}
+.btn-small {
+  padding: 6px 14px;
+  font-size: 12px;
+  min-height: 32px;
+}
+
+/* ---------------------------------------------------------------------------
+   Dashboard
+--------------------------------------------------------------------------- */
+.dash-top {
+  display: flex;
+  align-items: center;
+  padding: 8px 16px;
+  background: var(--bg2);
+  border-bottom: 1px solid var(--border);
+  gap: 16px;
+  height: 44px;
+}
+.dash-logo {
+  font-size: 18px;
+  font-weight: 800;
+  color: var(--accent);
+}
+.dash-logo span { color: var(--accent2); }
+.dash-indicators {
+  display: flex;
+  gap: 16px;
+  flex: 1;
+  justify-content: center;
+}
+.indicator {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--muted);
+}
+.ind-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+.ind-dot.green { background: var(--accent3); }
+.ind-dot.yellow { background: var(--accent4); }
+.ind-dot.red { background: var(--danger); }
+
+/* Main content */
+.dash-content {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+.dash-view {
+  display: none;
+  width: 100%;
+  height: 100%;
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+.dash-view.active { display: flex; }
+
+/* Room canvas */
+#roomCanvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+/* Room Map Controls (overlay buttons) */
+.map-controls {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  display: flex;
+  gap: 6px;
+  z-index: 10;
+}
+.map-ctrl-btn {
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: rgba(12,14,22,0.85);
+  color: var(--muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.map-ctrl-btn:hover { border-color: var(--accent); color: var(--accent); }
+.map-ctrl-btn.active {
+  border-color: var(--accent4);
+  color: var(--accent4);
+  background: rgba(245,158,11,0.1);
+}
+
+/* Edit mode badge */
+.map-edit-badge {
+  position: absolute;
+  top: 8px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(245,158,11,0.2);
+  border: 1px solid rgba(245,158,11,0.4);
+  color: var(--accent4);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 1px;
+  padding: 4px 12px;
+  border-radius: 4px;
+  z-index: 10;
+  animation: demo-pulse 2s ease-in-out infinite;
+}
+.map-edit-badge.hidden { display: none; }
+
+/* Vitals grid */
+.vitals-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+  padding: 16px;
+  overflow-y: auto;
+  width: 100%;
+}
+.vital-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 16px;
+}
+.vital-card .vital-label {
+  font-size: 11px;
+  text-transform: uppercase;
+  color: var(--muted);
+  letter-spacing: 0.5px;
+}
+.vital-card .vital-value {
+  font-size: 32px;
+  font-weight: 700;
+  margin-top: 4px;
+}
+.vital-card .vital-unit {
+  font-size: 14px;
+  color: var(--muted);
+  font-weight: 400;
+}
+.vital-card.hr .vital-value { color: var(--accent2); }
+.vital-card.br .vital-value { color: var(--accent); }
+.vital-card.motion .vital-value { color: var(--accent4); }
+.vital-card.presence .vital-value { color: var(--accent3); }
+
+/* Enhanced Vitals Chart Grid — 2×2 canvas layout filling the view */
+.vitals-chart-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 6px;
+  padding: 6px;
+  width: 100%;
+  height: 100%;
+  background: #08090d;
+}
+.vitals-chart-cell {
+  position: relative;
+  overflow: hidden;
+  border-radius: 8px;
+  min-height: 0;  /* Allow grid cells to shrink below content size */
+}
+.vitals-chart-cell canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* Bottom tab bar */
+.dash-bottom {
+  display: flex;
+  background: var(--bg2);
+  border-top: 1px solid var(--border);
+  height: 44px;
+}
+.tab-btn {
+  flex: 1;
+  border: none;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+.tab-btn.active {
+  color: var(--accent);
+  background: rgba(79, 140, 255, 0.08);
+}
+
+/* ---------------------------------------------------------------------------
+   Settings Overlay
+--------------------------------------------------------------------------- */
+.overlay {
+  display: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1024px;
+  height: 600px;
+  background: rgba(8, 9, 13, 0.85);
+  backdrop-filter: blur(4px);
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+.overlay.active { display: flex; }
+.overlay-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 28px;
+  width: 420px;
+  max-height: 480px;
+  overflow-y: auto;
+}
+.overlay-card h2 {
+  font-size: 20px;
+  margin-bottom: 20px;
+}
+.settings-group {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border);
+}
+.settings-group label {
+  font-size: 13px;
+  color: var(--muted);
+}
+.setting-value {
+  font-size: 13px;
+  font-weight: 600;
+}
+.settings-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 20px;
+  justify-content: flex-end;
+}
+
+/* ---------------------------------------------------------------------------
+   Demo Mode Banner
+--------------------------------------------------------------------------- */
+.demo-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 6px 16px;
+  background: linear-gradient(90deg, rgba(245, 158, 11, 0.15), rgba(245, 158, 11, 0.05));
+  border-bottom: 1px solid rgba(245, 158, 11, 0.3);
+  height: 32px;
+  font-size: 12px;
+}
+.demo-banner.hidden { display: none; }
+
+.demo-badge {
+  background: var(--accent4);
+  color: #000;
+  font-size: 10px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  animation: demo-pulse 2s ease-in-out infinite;
+}
+@keyframes demo-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.7; }
+}
+
+.demo-phase {
+  flex: 1;
+  color: var(--accent4);
+  font-weight: 600;
+}
+
+.demo-scenario-select {
+  background: var(--card);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 3px 8px;
+  font-size: 11px;
+  min-height: 28px;
+  cursor: pointer;
+}
+.demo-scenario-select:focus {
+  border-color: var(--accent4);
+  outline: none;
+}
+
+/* ---------------------------------------------------------------------------
+   People & Beacon Tracking Tab
+--------------------------------------------------------------------------- */
+.people-panel {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  padding: 12px 16px;
+  gap: 10px;
+  overflow: hidden;
+}
+
+/* Summary bar: role counts */
+.people-summary {
+  display: flex;
+  gap: 10px;
+  flex-shrink: 0;
+}
+.people-stat {
+  flex: 1;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  text-align: center;
+}
+.people-stat-count {
+  font-size: 28px;
+  font-weight: 700;
+  line-height: 1;
+}
+.people-stat-label {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+.people-stat.patient .people-stat-count { color: var(--accent4); }
+.people-stat.staff .people-stat-count { color: #8b5cf6; }
+.people-stat.visitor .people-stat-count { color: var(--muted); }
+.people-stat.total .people-stat-count { color: var(--accent); }
+
+/* Beacon card list */
+.beacon-list {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+}
+
+.beacon-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+  color: var(--muted);
+}
+.beacon-empty-icon { font-size: 32px; opacity: 0.5; }
+.beacon-empty-text { font-size: 14px; font-weight: 600; margin-top: 8px; }
+.beacon-empty-hint { font-size: 11px; margin-top: 4px; }
+
+/* Individual beacon card */
+.beacon-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 10px 14px;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.15s;
+  flex-shrink: 0;
+}
+.beacon-card:active { transform: scale(0.99); }
+.beacon-card:hover { border-color: var(--accent); }
+.beacon-card.role-patient { border-left: 3px solid var(--accent4); }
+.beacon-card.role-staff { border-left: 3px solid #8b5cf6; }
+.beacon-card.role-visitor { border-left: 3px solid var(--muted); }
+.beacon-card.role-unknown { border-left: 3px solid var(--border); }
+
+.beacon-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  flex-shrink: 0;
+}
+.beacon-avatar.patient { background: rgba(245,158,11,0.15); }
+.beacon-avatar.staff { background: rgba(139,92,246,0.15); }
+.beacon-avatar.visitor { background: rgba(107,114,128,0.15); }
+.beacon-avatar.unknown { background: rgba(30,33,48,0.8); }
+
+.beacon-info {
+  flex: 1;
+  min-width: 0;
+}
+.beacon-name {
+  font-size: 14px;
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.beacon-meta {
+  display: flex;
+  gap: 10px;
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 2px;
+}
+.beacon-role-badge {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+.beacon-role-badge.patient { background: rgba(245,158,11,0.2); color: var(--accent4); }
+.beacon-role-badge.staff { background: rgba(139,92,246,0.2); color: #8b5cf6; }
+.beacon-role-badge.visitor { background: rgba(107,114,128,0.2); color: var(--muted); }
+.beacon-role-badge.unknown { background: rgba(30,33,48,0.8); color: var(--muted); }
+
+/* RSSI signal strength bar */
+.beacon-signal {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+.signal-bars {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 16px;
+}
+.signal-bar {
+  width: 4px;
+  border-radius: 1px;
+  background: var(--border);
+  transition: background 0.3s;
+}
+.signal-bar:nth-child(1) { height: 4px; }
+.signal-bar:nth-child(2) { height: 8px; }
+.signal-bar:nth-child(3) { height: 12px; }
+.signal-bar:nth-child(4) { height: 16px; }
+.signal-bar.active { background: var(--accent3); }
+.signal-bar.weak { background: var(--accent4); }
+.signal-bar.strong { background: var(--accent3); }
+.signal-rssi {
+  font-size: 10px;
+  color: var(--muted);
+  font-family: monospace;
+  min-width: 42px;
+  text-align: right;
+}
+
+/* Beacon edit button */
+.beacon-edit-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--muted);
+  font-size: 11px;
+  padding: 4px 10px;
+  cursor: pointer;
+  min-height: 28px;
+  transition: border-color 0.15s, color 0.15s;
+}
+.beacon-edit-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Activity log */
+.beacon-log {
+  flex-shrink: 0;
+  max-height: 100px;
+  border-top: 1px solid var(--border);
+  padding-top: 8px;
+}
+.beacon-log-title {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.beacon-log-entries {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  overflow-y: auto;
+  max-height: 70px;
+}
+.log-entry {
+  font-size: 11px;
+  color: var(--muted);
+  display: flex;
+  gap: 8px;
+}
+.log-entry .log-time {
+  color: var(--border);
+  font-family: monospace;
+  flex-shrink: 0;
+  min-width: 50px;
+}
+.log-entry .log-icon { flex-shrink: 0; }
+.log-entry.enter .log-icon { color: var(--accent3); }
+.log-entry.leave .log-icon { color: var(--danger); }
+.log-entry.update .log-icon { color: var(--accent); }
+
+/* Beacon edit overlay */
+.beacon-edit-card {
+  width: 380px;
+}
+.beacon-edit-mac {
+  font-size: 12px;
+  font-family: monospace;
+  color: var(--muted);
+  margin: -12px 0 16px;
+}
+.beacon-edit-field {
+  margin-bottom: 14px;
+}
+.beacon-edit-field label {
+  display: block;
+  font-size: 12px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.input-field {
+  width: 100%;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text);
+  font-size: 14px;
+  padding: 10px 14px;
+  min-height: 44px;
+  outline: none;
+  transition: border-color 0.2s;
+}
+.input-field:focus { border-color: var(--accent); }
+
+/* Role picker (button group) */
+.role-picker {
+  display: flex;
+  gap: 8px;
+}
+.role-btn {
+  flex: 1;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  padding: 8px 4px;
+  cursor: pointer;
+  min-height: 44px;
+  transition: border-color 0.2s, color 0.2s, background 0.2s;
+}
+.role-btn:hover { border-color: var(--accent); }
+.role-btn.selected {
+  border-color: var(--accent);
+  color: var(--text);
+  background: rgba(79, 140, 255, 0.1);
+}
+
+/* Demo alert overlay (e.g., fall detection) */
+.demo-alert {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(239, 68, 68, 0.15);
+  border: 2px solid var(--danger);
+  border-radius: 16px;
+  padding: 20px 32px;
+  text-align: center;
+  z-index: 50;
+  animation: alert-flash 1s ease-in-out infinite;
+  pointer-events: none;
+}
+.demo-alert.hidden { display: none; }
+.demo-alert-icon { font-size: 36px; }
+.demo-alert-text {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--danger);
+  margin-top: 8px;
+}
+@keyframes alert-flash {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ---------------------------------------------------------------------------
+   Connection Status Toast
+--------------------------------------------------------------------------- */
+/* Shows a subtle bar below the top bar when the WebSocket is disconnected
+   or the server reports unhealthy. Auto-hides when connection is restored. */
+.connection-toast {
+  position: absolute;
+  top: 44px; /* below the dash-top bar */
+  left: 0;
+  right: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  z-index: 90;
+  transition: transform 0.3s ease, opacity 0.3s ease, background 0.3s ease;
+}
+.connection-toast.hidden {
+  transform: translateY(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+.connection-toast.disconnected {
+  background: linear-gradient(90deg, rgba(239,68,68,0.2), rgba(239,68,68,0.08));
+  border-bottom: 1px solid rgba(239,68,68,0.3);
+  color: var(--danger);
+}
+.connection-toast.connecting {
+  background: linear-gradient(90deg, rgba(245,158,11,0.15), rgba(245,158,11,0.05));
+  border-bottom: 1px solid rgba(245,158,11,0.3);
+  color: var(--accent4);
+}
+.connection-toast.restored {
+  background: linear-gradient(90deg, rgba(52,211,153,0.15), rgba(52,211,153,0.05));
+  border-bottom: 1px solid rgba(52,211,153,0.3);
+  color: var(--accent3);
+}
+.connection-toast-icon {
+  font-size: 14px;
+  animation: toast-pulse 1.5s ease-in-out infinite;
+}
+.connection-toast.restored .connection-toast-icon {
+  animation: none;
+}
+@keyframes toast-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+/* ==============================================================================
+   OTA Firmware Update Overlay
+   ==============================================================================
+   Dark-themed firmware management UI matching the HeartBeatz kiosk design.
+   Accessible from Settings → Firmware Update.
+*/
+
+.ota-card {
+  max-width: 560px;
+  max-height: 520px;
+  overflow-y: auto;
+}
+
+.ota-section {
+  margin-bottom: 16px;
+  padding: 12px;
+  background: var(--bg2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.ota-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--muted);
+  margin-bottom: 8px;
+}
+
+.ota-firmware-info { }
+
+.ota-version {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.ota-meta {
+  font-size: 11px;
+  color: var(--muted);
+  margin-top: 4px;
+}
+
+/* Upload form */
+.ota-upload-form { display: flex; flex-direction: column; gap: 10px; }
+
+.ota-field label {
+  display: block;
+  font-size: 11px;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.ota-file-drop {
+  padding: 16px;
+  text-align: center;
+  border: 2px dashed var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  transition: border-color 0.2s;
+}
+.ota-file-drop:hover, .ota-file-drop:active {
+  border-color: var(--accent);
+}
+
+.ota-file-label {
+  font-size: 12px;
+  color: var(--muted);
+}
+
+.ota-upload-status {
+  font-size: 12px;
+  min-height: 18px;
+}
+.ota-upload-status.uploading { color: var(--accent4); }
+.ota-upload-status.success { color: var(--accent3); }
+.ota-upload-status.error { color: var(--danger); }
+
+/* Node firmware status list */
+.ota-node-list { display: flex; flex-direction: column; gap: 6px; }
+
+.ota-node-empty {
+  font-size: 12px;
+  color: var(--muted);
+  text-align: center;
+  padding: 8px;
+}
+
+.ota-node-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--card);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent3);
+}
+.ota-node-row.outdated {
+  border-left-color: var(--accent4);
+}
+
+.ota-node-name {
+  flex: 1;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.ota-node-version {
+  font-size: 11px;
+  color: var(--muted);
+  font-family: monospace;
+}
+
+.ota-node-status {
+  font-size: 10px;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-weight: 600;
+}
+.ota-node-row.current .ota-node-status {
+  background: rgba(52,211,153,0.15);
+  color: var(--accent3);
+}
+.ota-node-row.outdated .ota-node-status {
+  background: rgba(245,158,11,0.15);
+  color: var(--accent4);
+}
+
+/* Active OTA updates with progress bars */
+.ota-active-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  background: var(--card);
+  border-radius: 6px;
+  margin-bottom: 4px;
+}
+
+.ota-active-node {
+  width: 80px;
+  font-size: 11px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ota-active-bar {
+  flex: 1;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.ota-active-fill {
+  height: 100%;
+  background: var(--accent);
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.ota-active-pct {
+  width: 36px;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.ota-active-status {
+  font-size: 10px;
+  color: var(--muted);
+}

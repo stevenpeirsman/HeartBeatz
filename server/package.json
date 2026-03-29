@@ -1,0 +1,27 @@
+{
+  "name": "heartbeatz-server",
+  "version": "0.1.0",
+  "description": "HeartBeatz demo box orchestration server — node discovery, BLE tracking, radar integration",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "test": "node --test src/*.test.js src/**/*.test.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "ws": "^8.16.0",
+    "dotenv": "^16.4.1",
+    "node-fetch": "^3.3.2",
+    "serialport": "^12.0.0",
+    "pino": "^8.17.2",
+    "pino-pretty": "^10.3.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.0.3"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  }
+}

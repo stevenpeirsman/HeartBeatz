@@ -1,0 +1,902 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1024,height=600,user-scalable=no">
+<title>HeartBeatz</title>
+<style>
+  :root {
+    --bg: #08090d;
+    --card: #12141c;
+    --border: #1e2130;
+    --accent: #4f8cff;
+    --accent2: #ff6b4f;
+    --accent3: #34d399;
+    --accent4: #f59e0b;
+    --text: #e2e8f0;
+    --muted: #6b7280;
+    --danger: #ef4444;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; -webkit-tap-highlight-color:transparent; }
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Inter', -apple-system, system-ui, sans-serif;
+    width: 1024px; height: 600px;
+    overflow: hidden;
+    touch-action: pan-x;
+    user-select: none;
+  }
+
+  /* =========== SCREENS =========== */
+  .screen { display:none; width:1024px; height:600px; position:absolute; top:0; left:0; }
+  .screen.active { display:flex; }
+
+  /* =========== SPLASH =========== */
+  #splash {
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    background: radial-gradient(ellipse at center, #0d1020 0%, #08090d 70%);
+  }
+  .splash-logo {
+    font-size: 42px;
+    font-weight: 800;
+    letter-spacing: -1px;
+    color: var(--accent);
+  }
+  .splash-logo span { color: var(--accent2); }
+  .splash-sub {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+  .splash-progress {
+    width: 200px;
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 24px;
+    overflow: hidden;
+  }
+  .splash-progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    width: 0%;
+    transition: width 0.5s ease;
+  }
+  .splash-status {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 12px;
+    min-height: 16px;
+  }
+
+  /* =========== DISCOVERY =========== */
+  #discovery {
+    flex-direction: column;
+    padding: 24px 32px;
+  }
+  .disc-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .disc-title { font-size: 20px; font-weight: 700; }
+  .disc-subtitle { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .disc-count {
+    font-size: 13px;
+    padding: 6px 14px;
+    border-radius: 20px;
+    font-weight: 600;
+  }
+  .disc-count.ok { background: rgba(52,211,153,0.12); color: var(--accent3); }
+  .disc-count.waiting { background: rgba(245,158,11,0.12); color: var(--accent4); }
+
+  .node-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 10px;
+    flex: 1;
+    align-content: start;
+  }
+  .node-card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 14px;
+    transition: all 0.3s;
+  }
+  .node-card.online {
+    border-color: var(--accent3);
+    box-shadow: 0 0 12px rgba(52,211,153,0.08);
+  }
+  .node-card.offline {
+    opacity: 0.4;
+  }
+  .node-card .node-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+  }
+  .node-card .node-id {
+    font-weight: 700;
+    font-size: 14px;
+  }
+  .node-card .node-dot {
+    width: 8px; height: 8px;
+    border-radius: 4px;
+  }
+  .node-dot.live { background: var(--accent3); box-shadow: 0 0 6px var(--accent3); }
+  .node-dot.dead { background: var(--muted); }
+  .node-card .node-rssi {
+    font-size: 20px;
+    font-weight: 700;
+    font-family: 'Fira Code', monospace;
+    color: var(--accent);
+  }
+  .node-card .node-rssi-label {
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .node-card .node-meta {
+    font-size: 10px;
+    color: var(--muted);
+    margin-top: 6px;
+  }
+
+  .disc-actions {
+    display: flex;
+    gap: 10px;
+    margin-top: 16px;
+    justify-content: flex-end;
+  }
+
+  /* =========== BUTTONS =========== */
+  .btn {
+    padding: 12px 28px;
+    border-radius: 10px;
+    font-size: 14px;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s;
+    min-height: 48px;  /* touch target */
+  }
+  .btn:active { transform: scale(0.97); }
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:disabled {
+    background: var(--border);
+    color: var(--muted);
+    cursor: not-allowed;
+  }
+  .btn-secondary {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--muted);
+  }
+  .btn-secondary:hover { border-color: var(--accent); color: var(--text); }
+
+  /* =========== DASHBOARD =========== */
+  #dashboard {
+    flex-direction: column;
+  }
+  .dash-topbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 8px 16px;
+    border-bottom: 1px solid var(--border);
+    height: 36px;
+    flex-shrink: 0;
+  }
+  .dash-logo { font-size: 13px; font-weight: 700; color: var(--accent); }
+  .dash-logo span { color: var(--accent2); }
+  .dash-status { display: flex; gap: 14px; font-size: 11px; color: var(--muted); align-items:center; }
+  .dash-live-dot {
+    width: 6px; height: 6px;
+    background: var(--accent3);
+    border-radius: 3px;
+    display: inline-block;
+    margin-right: 3px;
+    animation: pulse 2s infinite;
+  }
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  .dash-main {
+    display: flex;
+    flex: 1;
+    gap: 0;
+    overflow: hidden;
+  }
+
+  /* Room map */
+  .room-map {
+    flex: 1.3;
+    position: relative;
+    border-right: 1px solid var(--border);
+  }
+  .room-map canvas {
+    width: 100%;
+    height: 100%;
+  }
+  .room-label {
+    position: absolute;
+    top: 8px;
+    left: 12px;
+    font-size: 10px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+
+  /* Vitals panel */
+  .vitals-panel {
+    width: 220px;
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: 0;
+    flex-shrink: 0;
+  }
+  .vital-card {
+    flex: 1;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+  .vital-card:last-child { border-bottom: none; }
+  .vital-label {
+    font-size: 9px;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 2px;
+  }
+  .vital-value {
+    font-size: 32px;
+    font-weight: 800;
+    font-family: 'Fira Code', monospace;
+    line-height: 1;
+  }
+  .vital-unit {
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+  .vital-bar {
+    height: 3px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 6px;
+    overflow: hidden;
+  }
+  .vital-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.5s;
+  }
+  .vital-card.hr .vital-value { color: var(--accent2); }
+  .vital-card.br .vital-value { color: var(--accent3); }
+  .vital-card.motion .vital-value { color: var(--accent4); font-size: 22px; }
+  .vital-card.persons .vital-value { color: var(--accent); }
+
+  /* Node status bar */
+  .dash-bottombar {
+    display: flex;
+    align-items: center;
+    padding: 6px 16px;
+    border-top: 1px solid var(--border);
+    height: 32px;
+    flex-shrink: 0;
+    gap: 12px;
+    font-size: 10px;
+    color: var(--muted);
+  }
+  .node-pip {
+    width: 8px; height: 8px;
+    border-radius: 2px;
+    display: inline-block;
+  }
+  .node-pip.on { background: var(--accent3); }
+  .node-pip.off { background: var(--border); }
+
+  .view-toggle {
+    margin-left: auto;
+    padding: 4px 10px;
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    background: none;
+    color: var(--muted);
+    font-size: 10px;
+    cursor: pointer;
+  }
+  .view-toggle:active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
+  /* Signal quality mini-bars */
+  .signal-bars { display:flex; gap:1px; align-items:flex-end; height:10px; }
+  .signal-bars .bar { width:3px; background:var(--accent3); border-radius:1px; }
+</style>
+</head>
+<body>
+
+<!-- ==================== SPLASH SCREEN ==================== -->
+<div id="splash" class="screen active">
+  <div class="splash-logo">Heart<span>Beatz</span></div>
+  <div class="splash-sub">WiFi CSI Sensing Platform</div>
+  <div class="splash-progress">
+    <div class="splash-progress-bar" id="splashProgress"></div>
+  </div>
+  <div class="splash-status" id="splashStatus">Initializing...</div>
+</div>
+
+<!-- ==================== NODE DISCOVERY ==================== -->
+<div id="discovery" class="screen">
+  <div class="disc-header">
+    <div>
+      <div class="disc-title">Sensor Discovery</div>
+      <div class="disc-subtitle">Power on your ESP32 nodes — they'll appear here automatically</div>
+    </div>
+    <div class="disc-count waiting" id="nodeCountBadge">0 nodes</div>
+  </div>
+
+  <div class="node-grid" id="nodeGrid">
+    <!-- Nodes populate dynamically -->
+  </div>
+
+  <div class="disc-actions">
+    <button class="btn btn-secondary" id="btnCalibrate" disabled>Calibrate Room</button>
+    <button class="btn btn-primary" id="btnStartSensing" disabled>Start Sensing →</button>
+  </div>
+</div>
+
+<!-- ==================== LIVE DASHBOARD ==================== -->
+<div id="dashboard" class="screen">
+  <div class="dash-topbar">
+    <div class="dash-logo">Heart<span>Beatz</span></div>
+    <div class="dash-status">
+      <span id="dashNodeCount">0 nodes</span>
+      <span><span class="dash-live-dot"></span>Live</span>
+      <span id="dashSource">—</span>
+    </div>
+  </div>
+
+  <div class="dash-main">
+    <div class="room-map">
+      <div class="room-label">Room Map</div>
+      <canvas id="roomCanvas"></canvas>
+    </div>
+    <div class="vitals-panel">
+      <div class="vital-card hr">
+        <div class="vital-label">Heart Rate</div>
+        <div class="vital-value" id="vHR">—</div>
+        <div class="vital-unit">BPM</div>
+        <div class="vital-bar"><div class="vital-bar-fill" id="vHRBar" style="width:0;background:var(--accent2)"></div></div>
+      </div>
+      <div class="vital-card br">
+        <div class="vital-label">Breathing</div>
+        <div class="vital-value" id="vBR">—</div>
+        <div class="vital-unit">RPM</div>
+        <div class="vital-bar"><div class="vital-bar-fill" id="vBRBar" style="width:0;background:var(--accent3)"></div></div>
+      </div>
+      <div class="vital-card motion">
+        <div class="vital-label">Motion</div>
+        <div class="vital-value" id="vMotion">—</div>
+        <div class="vital-unit" id="vMotionConf">Confidence —</div>
+      </div>
+      <div class="vital-card persons">
+        <div class="vital-label">People Detected</div>
+        <div class="vital-value" id="vPersons">0</div>
+        <div class="vital-unit" id="vPersonsDetail">No subjects in view</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dash-bottombar">
+    <span>Nodes:</span>
+    <span id="nodePips"></span>
+    <span id="dashSignalQuality"></span>
+    <button class="view-toggle" id="btnToggleView">⇄ 3D View</button>
+    <button class="view-toggle" id="btnSetup">⚙ Setup</button>
+  </div>
+</div>
+
+<script>
+// ==============================================================================
+// HeartBeatz Setup & Dashboard — Single Page Application
+// ==============================================================================
+
+const API_BASE = window.location.origin;
+const WS_BASE = API_BASE.replace('http', 'ws');
+
+// --- State ---
+let currentScreen = 'splash';
+let nodes = {};
+let sensingData = null;
+let ws = null;
+let discoveryPollTimer = null;
+
+// --- Screen management ---
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById(id).classList.add('active');
+  currentScreen = id;
+
+  if (id === 'dashboard') {
+    initDashboard();
+  }
+}
+
+// ==============================================================================
+// SPLASH SCREEN
+// ==============================================================================
+
+async function runSplashSequence() {
+  const progress = document.getElementById('splashProgress');
+  const status = document.getElementById('splashStatus');
+
+  // Step 1: Check server
+  status.textContent = 'Connecting to sensing server...';
+  progress.style.width = '20%';
+
+  let serverReady = false;
+  let attempts = 0;
+  const maxAttempts = 60; // 60 × 1s = 60s max wait
+
+  while (!serverReady && attempts < maxAttempts) {
+    try {
+      const resp = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(2000) });
+      if (resp.ok) {
+        serverReady = true;
+      }
+    } catch (e) {
+      // Server not ready yet
+    }
+    attempts++;
+    progress.style.width = `${20 + (attempts / maxAttempts) * 40}%`;
+
+    if (!serverReady) {
+      status.textContent = `Waiting for server... (${attempts}s)`;
+      await sleep(1000);
+    }
+  }
+
+  if (!serverReady) {
+    status.textContent = 'Server not responding — check Docker containers';
+    progress.style.width = '100%';
+    progress.style.background = 'var(--danger)';
+    // Still proceed to discovery so user can see something
+    await sleep(3000);
+  }
+
+  // Step 2: Transition to discovery
+  status.textContent = 'Scanning for sensor nodes...';
+  progress.style.width = '80%';
+  await sleep(800);
+
+  progress.style.width = '100%';
+  await sleep(400);
+
+  showScreen('discovery');
+  startNodeDiscovery();
+}
+
+// ==============================================================================
+// NODE DISCOVERY
+// ==============================================================================
+
+function startNodeDiscovery() {
+  pollNodes();
+  discoveryPollTimer = setInterval(pollNodes, 2000);
+}
+
+async function pollNodes() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/v1/sensing/latest`, {
+      signal: AbortSignal.timeout(3000)
+    });
+    if (!resp.ok) return;
+    const data = await resp.json();
+
+    if (data.nodes && Array.isArray(data.nodes)) {
+      data.nodes.forEach(n => {
+        const id = n.id ?? n.node_id ?? Object.keys(nodes).length;
+        nodes[id] = {
+          id: id,
+          rssi: n.rssi ?? n.mean_rssi ?? -99,
+          lastSeen: Date.now(),
+          channel: n.channel ?? '—',
+          packets: (nodes[id]?.packets ?? 0) + 1,
+        };
+      });
+    }
+
+    renderNodeGrid();
+    updateDiscoveryButtons();
+  } catch (e) {
+    // Server unavailable, keep polling
+  }
+}
+
+function renderNodeGrid() {
+  const grid = document.getElementById('nodeGrid');
+  const now = Date.now();
+
+  // Expected nodes (show placeholders for nodes 0-4)
+  const maxExpected = Math.max(4, Object.keys(nodes).length + 1);
+  let html = '';
+
+  for (let i = 0; i < maxExpected; i++) {
+    const node = nodes[i];
+    const online = node && (now - node.lastSeen < 10000);
+
+    if (online) {
+      const signalPct = Math.min(100, Math.max(0, (node.rssi + 90) * 2));
+      html += `
+        <div class="node-card online">
+          <div class="node-header">
+            <span class="node-id">Node ${i}</span>
+            <span class="node-dot live"></span>
+          </div>
+          <div class="node-rssi">${node.rssi}</div>
+          <div class="node-rssi-label">dBm signal strength</div>
+          <div class="node-meta">${node.packets} frames received</div>
+        </div>`;
+    } else {
+      html += `
+        <div class="node-card offline">
+          <div class="node-header">
+            <span class="node-id">Node ${i}</span>
+            <span class="node-dot dead"></span>
+          </div>
+          <div class="node-rssi">—</div>
+          <div class="node-rssi-label">Waiting for signal...</div>
+          <div class="node-meta">Not detected</div>
+        </div>`;
+    }
+  }
+
+  grid.innerHTML = html;
+
+  // Update badge
+  const onlineCount = Object.values(nodes).filter(n => (now - n.lastSeen) < 10000).length;
+  const badge = document.getElementById('nodeCountBadge');
+  badge.textContent = `${onlineCount} node${onlineCount !== 1 ? 's' : ''}`;
+  badge.className = `disc-count ${onlineCount >= 2 ? 'ok' : 'waiting'}`;
+}
+
+function updateDiscoveryButtons() {
+  const now = Date.now();
+  const onlineCount = Object.values(nodes).filter(n => (now - n.lastSeen) < 10000).length;
+  document.getElementById('btnStartSensing').disabled = onlineCount < 1;
+  document.getElementById('btnCalibrate').disabled = onlineCount < 2;
+}
+
+// ==============================================================================
+// LIVE DASHBOARD
+// ==============================================================================
+
+let roomCanvas, roomCtx;
+
+function initDashboard() {
+  // Stop discovery polling
+  if (discoveryPollTimer) clearInterval(discoveryPollTimer);
+
+  // Setup canvas
+  roomCanvas = document.getElementById('roomCanvas');
+  const rect = roomCanvas.parentElement.getBoundingClientRect();
+  roomCanvas.width = rect.width * 2;  // 2x for retina
+  roomCanvas.height = rect.height * 2;
+  roomCanvas.style.width = rect.width + 'px';
+  roomCanvas.style.height = rect.height + 'px';
+  roomCtx = roomCanvas.getContext('2d');
+  roomCtx.scale(2, 2);
+
+  // Connect WebSocket for real-time data
+  connectWebSocket();
+
+  // Start render loop
+  requestAnimationFrame(renderDashboard);
+}
+
+function connectWebSocket() {
+  if (ws && ws.readyState <= 1) return;
+
+  try {
+    // Try the standard sensing WS endpoint
+    ws = new WebSocket(`${WS_BASE}/ws/sensing`);
+
+    ws.onmessage = (event) => {
+      try {
+        sensingData = JSON.parse(event.data);
+        updateVitals(sensingData);
+        updateNodeStatus(sensingData);
+      } catch (e) { /* parse error, skip frame */ }
+    };
+
+    ws.onclose = () => {
+      // Reconnect after 2s
+      setTimeout(connectWebSocket, 2000);
+    };
+
+    ws.onerror = () => {
+      ws.close();
+    };
+  } catch (e) {
+    // WebSocket not available, fall back to polling
+    setInterval(pollSensingData, 1000);
+  }
+}
+
+async function pollSensingData() {
+  try {
+    const resp = await fetch(`${API_BASE}/api/v1/sensing/latest`);
+    if (resp.ok) {
+      sensingData = await resp.json();
+      updateVitals(sensingData);
+      updateNodeStatus(sensingData);
+    }
+  } catch (e) { /* offline */ }
+}
+
+function updateVitals(data) {
+  if (!data) return;
+
+  // Heart Rate
+  const hr = data.vital_signs?.heart_rate_bpm;
+  const hrConf = data.vital_signs?.heartbeat_confidence ?? 0;
+  document.getElementById('vHR').textContent = hr != null ? Math.round(hr) : '—';
+  document.getElementById('vHRBar').style.width = `${hrConf * 100}%`;
+
+  // Breathing Rate
+  const br = data.vital_signs?.breathing_rate_bpm;
+  const brConf = data.vital_signs?.breathing_confidence ?? 0;
+  document.getElementById('vBR').textContent = br != null ? Math.round(br) : '—';
+  document.getElementById('vBRBar').style.width = `${brConf * 100}%`;
+
+  // Motion
+  const motion = data.classification?.motion_level ?? data.features?.motion_band_power;
+  const motionConf = data.classification?.confidence ?? 0;
+  if (typeof motion === 'string') {
+    const labels = { 'absent': 'No Motion', 'present_still': 'Still', 'active': 'Active' };
+    document.getElementById('vMotion').textContent = labels[motion] ?? motion;
+  } else if (motion != null) {
+    document.getElementById('vMotion').textContent = motion > 0.5 ? 'Active' : motion > 0.1 ? 'Still' : 'None';
+  }
+  document.getElementById('vMotionConf').textContent = `Confidence ${Math.round(motionConf * 100)}%`;
+
+  // Persons
+  const persons = data.persons?.length ?? data.estimated_persons ?? 0;
+  document.getElementById('vPersons').textContent = persons;
+  document.getElementById('vPersonsDetail').textContent =
+    persons === 0 ? 'No subjects in view' :
+    persons === 1 ? '1 person detected' :
+    `${persons} people detected`;
+
+  // Source
+  document.getElementById('dashSource').textContent = data.source ?? '—';
+}
+
+function updateNodeStatus(data) {
+  if (!data?.nodes) return;
+
+  // Update nodes map
+  data.nodes.forEach(n => {
+    const id = n.id ?? n.node_id;
+    if (id != null) {
+      nodes[id] = { ...nodes[id], id, rssi: n.rssi ?? -99, lastSeen: Date.now() };
+    }
+  });
+
+  const now = Date.now();
+  const onlineCount = Object.values(nodes).filter(n => (now - n.lastSeen) < 10000).length;
+  document.getElementById('dashNodeCount').textContent = `${onlineCount} nodes`;
+
+  // Node pips
+  let pipsHtml = '';
+  for (let i = 0; i < Math.max(4, Object.keys(nodes).length); i++) {
+    const on = nodes[i] && (now - nodes[i].lastSeen < 10000);
+    pipsHtml += `<span class="node-pip ${on ? 'on' : 'off'}"></span> `;
+  }
+  document.getElementById('nodePips').innerHTML = pipsHtml;
+}
+
+// --- Room Map Canvas Rendering ---
+function renderDashboard() {
+  if (currentScreen !== 'dashboard' || !roomCtx) {
+    requestAnimationFrame(renderDashboard);
+    return;
+  }
+
+  const w = roomCanvas.width / 2;
+  const h = roomCanvas.height / 2;
+  const ctx = roomCtx;
+
+  // Clear
+  ctx.fillStyle = '#0a0c10';
+  ctx.fillRect(0, 0, w, h);
+
+  // Room outline
+  const margin = 30;
+  const rw = w - margin * 2;
+  const rh = h - margin * 2;
+
+  ctx.strokeStyle = '#1a1d27';
+  ctx.lineWidth = 1;
+  ctx.strokeRect(margin, margin, rw, rh);
+
+  // Grid
+  ctx.strokeStyle = '#0f1118';
+  ctx.lineWidth = 0.5;
+  const gridStep = 40;
+  for (let x = margin; x <= margin + rw; x += gridStep) {
+    ctx.beginPath(); ctx.moveTo(x, margin); ctx.lineTo(x, margin + rh); ctx.stroke();
+  }
+  for (let y = margin; y <= margin + rh; y += gridStep) {
+    ctx.beginPath(); ctx.moveTo(margin, y); ctx.lineTo(margin + rw, y); ctx.stroke();
+  }
+
+  // Signal field (if available)
+  if (sensingData?.signal_field?.values) {
+    const field = sensingData.signal_field;
+    const fw = field.width ?? 20;
+    const fh = field.height ?? 20;
+    const cellW = rw / fw;
+    const cellH = rh / fh;
+
+    for (let fy = 0; fy < fh; fy++) {
+      for (let fx = 0; fx < fw; fx++) {
+        const val = field.values[fy * fw + fx] ?? 0;
+        if (val > 0.05) {
+          const alpha = Math.min(0.4, val * 0.5);
+          ctx.fillStyle = `rgba(79,140,255,${alpha})`;
+          ctx.fillRect(margin + fx * cellW, margin + fy * cellH, cellW, cellH);
+        }
+      }
+    }
+  }
+
+  // Draw nodes
+  const now = Date.now();
+  const nodePositions = [
+    { x: 0.08, y: 0.08 },
+    { x: 0.92, y: 0.08 },
+    { x: 0.08, y: 0.92 },
+    { x: 0.92, y: 0.92 },
+    { x: 0.5, y: 0.08 },
+  ];
+
+  Object.values(nodes).forEach((node, idx) => {
+    const pos = nodePositions[idx] ?? { x: 0.5, y: 0.5 };
+    const nx = margin + pos.x * rw;
+    const ny = margin + pos.y * rh;
+    const online = (now - node.lastSeen) < 10000;
+
+    ctx.fillStyle = online ? '#34d399' : '#2a2d3a';
+    ctx.beginPath();
+    ctx.arc(nx, ny, 4, 0, Math.PI * 2);
+    ctx.fill();
+
+    // Node label
+    ctx.fillStyle = online ? '#6b7280' : '#2a2d3a';
+    ctx.font = '8px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText(`N${node.id}`, nx, ny + 14);
+
+    // Signal rings (if online)
+    if (online) {
+      const ringPhase = (Date.now() / 2000) % 1;
+      for (let r = 0; r < 3; r++) {
+        const rp = (ringPhase + r * 0.33) % 1;
+        const radius = 8 + rp * 40;
+        const alpha = (1 - rp) * 0.08;
+        ctx.strokeStyle = `rgba(52,211,153,${alpha})`;
+        ctx.lineWidth = 1;
+        ctx.beginPath();
+        ctx.arc(nx, ny, radius, 0, Math.PI * 2);
+        ctx.stroke();
+      }
+    }
+  });
+
+  // Draw persons
+  if (sensingData?.persons) {
+    sensingData.persons.forEach((person, i) => {
+      const px = margin + (person.position?.[0] ?? 0.5) / 6 * rw;
+      const py = margin + (person.position?.[2] ?? 0.5) / 6 * rh;
+
+      // Person circle with glow
+      const gradient = ctx.createRadialGradient(px, py, 2, px, py, 20);
+      gradient.addColorStop(0, 'rgba(79,140,255,0.5)');
+      gradient.addColorStop(1, 'rgba(79,140,255,0)');
+      ctx.fillStyle = gradient;
+      ctx.fillRect(px - 20, py - 20, 40, 40);
+
+      ctx.fillStyle = '#4f8cff';
+      ctx.beginPath();
+      ctx.arc(px, py, 6, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.strokeStyle = 'rgba(79,140,255,0.6)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.arc(px, py, 8, 0, Math.PI * 2);
+      ctx.stroke();
+
+      // Label
+      ctx.fillStyle = '#8892a4';
+      ctx.font = '9px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.fillText(`Person ${(person.id ?? i) + 1}`, px, py + 20);
+    });
+  }
+
+  requestAnimationFrame(renderDashboard);
+}
+
+// ==============================================================================
+// EVENT HANDLERS
+// ==============================================================================
+
+document.getElementById('btnStartSensing').addEventListener('click', () => {
+  showScreen('dashboard');
+});
+
+document.getElementById('btnCalibrate').addEventListener('click', () => {
+  // TODO v2: Run empty-room baseline calibration
+  alert('Room calibration coming in v2!');
+});
+
+document.getElementById('btnToggleView').addEventListener('click', () => {
+  // Navigate to Observatory
+  window.location.href = `${API_BASE}/observatory.html`;
+});
+
+document.getElementById('btnSetup').addEventListener('click', () => {
+  // Go back to discovery
+  showScreen('discovery');
+  startNodeDiscovery();
+});
+
+// --- Touch swipe to toggle views ---
+let touchStartX = 0;
+document.addEventListener('touchstart', (e) => { touchStartX = e.touches[0].clientX; });
+document.addEventListener('touchend', (e) => {
+  const dx = e.changedTouches[0].clientX - touchStartX;
+  if (Math.abs(dx) > 80) {
+    if (dx < 0 && currentScreen === 'dashboard') {
+      // Swipe left → Observatory
+      window.location.href = `${API_BASE}/observatory.html`;
+    }
+    if (dx > 0 && currentScreen === 'dashboard') {
+      // Swipe right → back to setup
+      showScreen('discovery');
+      startNodeDiscovery();
+    }
+  }
+});
+
+// --- Utility ---
+function sleep(ms) { return new Promise(r => setTimeout(r, ms)); }
+
+// ==============================================================================
+// BOOT
+// ==============================================================================
+
+window.addEventListener('DOMContentLoaded', () => {
+  runSplashSequence();
+});
+</script>
+</body>
+</html>

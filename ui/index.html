@@ -1,0 +1,309 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=1024,height=600,user-scalable=no">
+<title>HeartBeatz</title>
+<link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+
+<!-- ========================== SPLASH SCREEN ========================== -->
+<div id="splash" class="screen active">
+  <div class="splash-center">
+    <div class="splash-logo">Heart<span>Beatz</span></div>
+    <div class="splash-sub">WiFi CSI Sensing Platform</div>
+    <div class="splash-progress"><div class="splash-bar" id="splashBar"></div></div>
+    <div class="splash-status" id="splashStatus">Initializing...</div>
+  </div>
+</div>
+
+<!-- ========================== SETUP WIZARD ========================== -->
+<div id="setup" class="screen">
+  <!-- Step 1: Node Discovery -->
+  <div id="setupStep1" class="setup-step active">
+    <div class="setup-header">
+      <h1>Node Discovery</h1>
+      <p>Scanning for ESP32-S3 sensor nodes on the network...</p>
+    </div>
+    <div class="node-grid" id="nodeGrid"></div>
+    <div class="setup-footer">
+      <div class="node-count"><span id="nodeCount">0</span> nodes found</div>
+      <button class="btn btn-primary" id="btnContinueToCalibrate" disabled>
+        Continue to Calibration
+      </button>
+    </div>
+  </div>
+
+  <!-- Step 2: Room Calibration -->
+  <div id="setupStep2" class="setup-step">
+    <div class="setup-header">
+      <h1>Room Calibration</h1>
+      <p>Clear the sensing area, then tap Calibrate. This takes ~10 seconds.</p>
+    </div>
+    <div class="calibrate-visual" id="calibrateVisual">
+      <div class="calibrate-ring"></div>
+      <div class="calibrate-label" id="calibrateLabel">Ready</div>
+    </div>
+    <div class="setup-footer">
+      <button class="btn btn-accent" id="btnCalibrate">Start Calibration</button>
+      <button class="btn btn-muted" id="btnSkipCalibrate">Skip</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========================== LIVE DASHBOARD ========================== -->
+<div id="dashboard" class="screen">
+  <!-- Demo mode banner (hidden by default, shown when in demo mode) -->
+  <div id="demoBanner" class="demo-banner hidden">
+    <div class="demo-badge">DEMO</div>
+    <div class="demo-phase" id="demoPhaseLabel">Loading...</div>
+    <select class="demo-scenario-select" id="demoScenarioSelect"></select>
+  </div>
+
+  <!-- Top bar -->
+  <div class="dash-top">
+    <div class="dash-logo">Heart<span>Beatz</span></div>
+    <div class="dash-indicators">
+      <div class="indicator" id="indNodes" title="Sensor Nodes">
+        <div class="ind-dot green"></div><span id="indNodeCount">0</span> nodes
+      </div>
+      <div class="indicator" id="indRadar" title="mmWave Radar">
+        <div class="ind-dot" id="indRadarDot"></div>Radar
+      </div>
+      <div class="indicator" id="indBle" title="BLE Beacons">
+        <div class="ind-dot" id="indBleDot"></div><span id="indBeaconCount">0</span> beacons
+      </div>
+    </div>
+    <div class="indicator" id="indConnection" title="Server Connection">
+      <div class="ind-dot" id="indConnectionDot"></div>Link
+    </div>
+    <button class="btn btn-small btn-muted" id="btnSettings">Settings</button>
+  </div>
+
+  <!-- Connection status toast (shown when WS drops or server is unhealthy) -->
+  <div id="connectionToast" class="connection-toast hidden">
+    <div class="connection-toast-icon" id="connectionToastIcon">⚡</div>
+    <div class="connection-toast-text" id="connectionToastText">Connecting...</div>
+  </div>
+
+  <!-- Main content area (swipeable) -->
+  <div class="dash-content" id="dashContent">
+    <!-- View 1: Room Map (Enhanced) -->
+    <div class="dash-view active" id="viewMap">
+      <canvas id="roomCanvas" width="640" height="480"></canvas>
+      <!-- Room map controls (top-left overlay) -->
+      <div class="map-controls" id="mapControls">
+        <button class="map-ctrl-btn" id="btnMapEdit" title="Edit node positions">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M10 1.5l2.5 2.5M1.5 12.5l.5-2.5L10 2l2 2-8 8-2.5.5z"/>
+          </svg>
+        </button>
+        <button class="map-ctrl-btn" id="btnMapReset" title="Reset node positions">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M1.5 7A5.5 5.5 0 017 1.5M12.5 7A5.5 5.5 0 017 12.5M1.5 7l2-2m-2 2l2 2M12.5 7l-2-2m2 2l-2 2"/>
+          </svg>
+        </button>
+        <button class="map-ctrl-btn" id="btnQuickCalibrate" title="Quick calibrate (empty room)">
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="7" cy="7" r="5.5"/>
+            <path d="M7 4v3l2 2"/>
+          </svg>
+        </button>
+      </div>
+      <!-- Edit mode indicator -->
+      <div class="map-edit-badge hidden" id="mapEditBadge">EDIT MODE</div>
+      <!-- Demo alert (e.g. fall detection) — hidden by default -->
+      <div id="demoAlert" class="demo-alert hidden">
+        <div class="demo-alert-icon">⚠️</div>
+        <div class="demo-alert-text" id="demoAlertText">FALL DETECTED</div>
+      </div>
+    </div>
+    <!-- View 2: People & Beacon Tracking -->
+    <div class="dash-view" id="viewPeople">
+      <!-- Summary bar: counts by role -->
+      <div class="people-panel">
+        <div class="people-summary">
+          <div class="people-stat patient">
+            <div class="people-stat-count" id="patientCount">0</div>
+            <div class="people-stat-label">Patients</div>
+          </div>
+          <div class="people-stat staff">
+            <div class="people-stat-count" id="staffCount">0</div>
+            <div class="people-stat-label">Staff</div>
+          </div>
+          <div class="people-stat visitor">
+            <div class="people-stat-count" id="visitorCount">0</div>
+            <div class="people-stat-label">Visitors</div>
+          </div>
+          <div class="people-stat total">
+            <div class="people-stat-count" id="totalBeaconCount">0</div>
+            <div class="people-stat-label">Total</div>
+          </div>
+        </div>
+
+        <!-- Beacon card list -->
+        <div class="beacon-list" id="beaconList">
+          <div class="beacon-empty" id="beaconEmpty">
+            <div class="beacon-empty-icon">📡</div>
+            <div class="beacon-empty-text">No beacons detected yet</div>
+            <div class="beacon-empty-hint">BLE wristbands and badges will appear here automatically</div>
+          </div>
+        </div>
+
+        <!-- Event log (recent arrivals/departures) -->
+        <div class="beacon-log" id="beaconLog">
+          <div class="beacon-log-title">Activity Log</div>
+          <div class="beacon-log-entries" id="beaconLogEntries"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- View 3: Vitals Panel (Enhanced with live charts) -->
+    <div class="dash-view" id="viewVitals">
+      <div class="vitals-chart-grid" id="vitalsChartGrid">
+        <!-- Heart Rate chart — top left -->
+        <div class="vitals-chart-cell" id="hrChartCell">
+          <canvas id="hrChart" width="480" height="180"></canvas>
+        </div>
+        <!-- Breathing Rate chart — top right -->
+        <div class="vitals-chart-cell" id="brChartCell">
+          <canvas id="brChart" width="480" height="180"></canvas>
+        </div>
+        <!-- Motion timeline — bottom left -->
+        <div class="vitals-chart-cell" id="motionChartCell">
+          <canvas id="motionChart" width="480" height="120"></canvas>
+        </div>
+        <!-- Signal quality gauges — bottom right -->
+        <div class="vitals-chart-cell" id="qualityChartCell">
+          <canvas id="qualityChart" width="480" height="120"></canvas>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Beacon Edit Overlay (inline rename/role assignment) -->
+  <div id="beaconEditOverlay" class="overlay">
+    <div class="overlay-card beacon-edit-card">
+      <h2>Edit Beacon Identity</h2>
+      <div class="beacon-edit-mac" id="beaconEditMac"></div>
+      <div class="beacon-edit-field">
+        <label for="beaconEditName">Display Name</label>
+        <input type="text" id="beaconEditName" class="input-field" placeholder="e.g. Patient Smith, Nurse Johnson">
+      </div>
+      <div class="beacon-edit-field">
+        <label for="beaconEditRole">Role</label>
+        <div class="role-picker" id="beaconEditRolePicker">
+          <button class="role-btn" data-role="patient">🏥 Patient</button>
+          <button class="role-btn" data-role="staff">👩‍⚕️ Staff</button>
+          <button class="role-btn" data-role="visitor">👤 Visitor</button>
+        </div>
+      </div>
+      <div class="settings-actions">
+        <button class="btn btn-primary" id="btnBeaconEditSave">Save</button>
+        <button class="btn btn-muted" id="btnBeaconEditCancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bottom: view switcher -->
+  <div class="dash-bottom">
+    <button class="tab-btn active" data-view="viewMap">Room Map</button>
+    <button class="tab-btn" data-view="viewPeople">People</button>
+    <button class="tab-btn" data-view="viewVitals">Vital Signs</button>
+  </div>
+</div>
+
+<!-- ========================== SETTINGS OVERLAY ========================== -->
+<div id="settings" class="overlay">
+  <div class="overlay-card">
+    <h2>Settings</h2>
+    <div class="settings-group">
+      <label>CSI Source</label>
+      <div class="setting-value" id="settingSource">-</div>
+    </div>
+    <div class="settings-group">
+      <label>Nodes Online</label>
+      <div class="setting-value" id="settingNodes">-</div>
+    </div>
+    <div class="settings-group">
+      <label>BLE Tracking</label>
+      <div class="setting-value" id="settingBle">-</div>
+    </div>
+    <div class="settings-group">
+      <label>mmWave Radar</label>
+      <div class="setting-value" id="settingRadar">-</div>
+    </div>
+    <div class="settings-actions">
+      <button class="btn btn-primary" id="btnSetupFloorplan">Setup Floor Plan</button>
+      <button class="btn btn-primary" id="btnOpenOta">Firmware Update</button>
+      <button class="btn btn-accent" id="btnRecalibrate">Re-calibrate Room</button>
+      <button class="btn btn-muted" id="btnCloseSettings">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========================== OTA FIRMWARE UPDATE OVERLAY ========================== -->
+<div id="otaOverlay" class="overlay">
+  <div class="overlay-card ota-card">
+    <h2>Firmware Update</h2>
+
+    <!-- Current firmware info -->
+    <div class="ota-section">
+      <div class="ota-section-title">Current Firmware</div>
+      <div class="ota-firmware-info" id="otaCurrentInfo">
+        <div class="ota-version" id="otaCurrentVersion">No firmware uploaded</div>
+        <div class="ota-meta" id="otaCurrentMeta"></div>
+      </div>
+    </div>
+
+    <!-- Upload new firmware -->
+    <div class="ota-section">
+      <div class="ota-section-title">Upload New Firmware</div>
+      <div class="ota-upload-form">
+        <div class="ota-field">
+          <label for="otaVersion">Version</label>
+          <input type="text" id="otaVersion" class="input-field" placeholder="e.g. 1.1.0">
+        </div>
+        <div class="ota-field">
+          <label for="otaNotes">Release Notes (optional)</label>
+          <input type="text" id="otaNotes" class="input-field" placeholder="e.g. Bug fixes, improved CSI rate">
+        </div>
+        <div class="ota-field">
+          <label>Firmware Binary (.bin)</label>
+          <div class="ota-file-drop" id="otaFileDrop">
+            <input type="file" id="otaFileInput" accept=".bin" hidden>
+            <div class="ota-file-label" id="otaFileLabel">Tap to select .bin file</div>
+          </div>
+        </div>
+        <button class="btn btn-accent" id="btnOtaUpload" disabled>Upload Firmware</button>
+        <div class="ota-upload-status" id="otaUploadStatus"></div>
+      </div>
+    </div>
+
+    <!-- Node firmware status -->
+    <div class="ota-section">
+      <div class="ota-section-title">Node Status</div>
+      <div class="ota-node-list" id="otaNodeList">
+        <div class="ota-node-empty">No nodes connected</div>
+      </div>
+    </div>
+
+    <!-- Active OTA updates -->
+    <div class="ota-section" id="otaActiveSection" style="display:none">
+      <div class="ota-section-title">Active Updates</div>
+      <div class="ota-active-list" id="otaActiveList"></div>
+    </div>
+
+    <div class="settings-actions">
+      <button class="btn btn-muted" id="btnCloseOta">Close</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/room-map.js"></script>
+<script src="js/vitals-chart.js"></script>
+<script src="js/floorplan-setup.js"></script>
+<script src="js/app.js"></script>
+</body>
+</html>

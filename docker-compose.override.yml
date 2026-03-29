@@ -1,0 +1,12 @@
+# Override: run HeartBeatz in demo mode without requiring the sensing server
+# This lets us demo the UI immediately while hardware is being assembled
+services:
+  heartbeatz:
+    depends_on: []
+    environment:
+      - DEMO_MODE=true
+      - DEMO_SCENARIO=patient-monitoring
+      - NODE_ENV=production
+      - HEARTBEATZ_PORT=8080
+      - LOG_LEVEL=info
+    # Don't wait for sensing server

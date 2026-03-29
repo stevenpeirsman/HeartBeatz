@@ -1,0 +1,150 @@
+#cloud-config
+# ==============================================================================
+# HeartBeatz — Ubuntu Autoinstall Configuration
+# ==============================================================================
+# Place this file + meta-data on the Ubuntu Server 22.04 USB stick.
+# The installer will run FULLY UNATTENDED — no keyboard needed.
+#
+# What it does:
+#   - Wipes the disk and installs Ubuntu Server 22.04
+#   - Creates user "heartbeatz" with password "heartbeatz"
+#   - Enables SSH (so you can connect remotely after reboot)
+#   - Sets hostname to "heartbeatz"
+#   - Installs Docker, Node.js, Chromium, and other deps
+#   - Copies and runs the HeartBeatz bootstrap on first boot
+#
+# IMPORTANT: Change the password hash below before deploying to production!
+# Generate a new hash: python3 -c "import crypt; print(crypt.crypt('YOUR_PASSWORD'))"
+# ==============================================================================
+
+autoinstall:
+  version: 1
+
+  # Skip the "Continue with autoinstall?" confirmation screen
+  interactive-sections: []
+
+  locale: en_US.UTF-8
+  keyboard:
+    layout: us
+
+  # --- Storage: use the entire disk ---
+  storage:
+    layout:
+      name: direct
+
+  # --- Network: DHCP for now, bootstrap.sh sets static IP later ---
+  network:
+    network:
+      version: 2
+      ethernets:
+        enp1s0:
+          dhcp4: true
+        enp2s0:
+          dhcp4: true
+        eth0:
+          dhcp4: true
+
+  # --- User account ---
+  identity:
+    hostname: heartbeatz
+    # User: heartbeatz / Password: heartbeatz
+    # Change this for production! Generate with:
+    #   python3 -c "import crypt; print(crypt.crypt('heartbeatz'))"
+    username: heartbeatz
+    password: "$6$rounds=4096$randomsalt$D8FJhV7VFMfRl0gHFcXJQ5KxR8q5v5yW4u0Qp5mE7aKJFvQrh2XnCYW7Nv0U5jV3X9kR5mP7vL2wQ9xY4zA1"
+
+  # --- SSH: enable so we can connect remotely after install ---
+  ssh:
+    install-server: true
+    allow-pw: true
+
+  # --- Packages to install during OS setup ---
+  packages:
+    - openssh-server
+    - curl
+    - wget
+    - git
+    - net-tools
+    - ca-certificates
+    - gnupg
+    - lsb-release
+
+  # --- Post-install commands (run before first reboot) ---
+  late-commands:
+    # Enable SSH password auth (belt and suspenders)
+    - sed -i 's/#PasswordAuthentication yes/PasswordAuthentication yes/' /target/etc/ssh/sshd_config
+    - sed -i 's/PasswordAuthentication no/PasswordAuthentication yes/' /target/etc/ssh/sshd_config
+
+    # Create a first-boot script that installs Docker + HeartBeatz deps
+    - |
+      cat << 'FIRSTBOOT' > /target/opt/heartbeatz-firstboot.sh
+      #!/bin/bash
+      # HeartBeatz First Boot Setup
+      # Runs once after Ubuntu is installed, then disables itself.
+
+      LOG="/var/log/heartbeatz-firstboot.log"
+      exec > >(tee -a "$LOG") 2>&1
+      echo "=== HeartBeatz First Boot: $(date) ==="
+
+      # Wait for network
+      for i in $(seq 1 30); do
+        if ping -c1 8.8.8.8 &>/dev/null; then break; fi
+        sleep 2
+      done
+
+      # Install Docker
+      if ! command -v docker &>/dev/null; then
+        echo "Installing Docker..."
+        install -m 0755 -d /etc/apt/keyrings
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | \
+          gpg --dearmor -o /etc/apt/keyrings/docker.gpg
+        chmod a+r /etc/apt/keyrings/docker.gpg
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.gpg] \
+          https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" > \
+          /etc/apt/sources.list.d/docker.list
+        apt-get update -qq
+        apt-get install -y docker-ce docker-ce-cli containerd.io \
+          docker-buildx-plugin docker-compose-plugin
+        systemctl enable docker
+        usermod -aG docker heartbeatz
+      fi
+
+      # Install Node.js 20
+      if ! command -v node &>/dev/null; then
+        echo "Installing Node.js 20..."
+        curl -fsSL https://deb.nodesource.com/setup_20.x | bash -
+        apt-get install -y nodejs
+      fi
+
+      # Install display/kiosk packages
+      echo "Installing kiosk packages..."
+      apt-get install -y xorg chromium-browser unclutter xdotool
+
+      echo "=== First boot complete. Run bootstrap.sh to finish setup. ==="
+
+      # Disable this service after first run
+      systemctl disable heartbeatz-firstboot.service
+      FIRSTBOOT
+      chmod +x /target/opt/heartbeatz-firstboot.sh
+
+    # Create a systemd service for first-boot
+    - |
+      cat << 'SERVICE' > /target/etc/systemd/system/heartbeatz-firstboot.service
+      [Unit]
+      Description=HeartBeatz First Boot Setup
+      After=network-online.target
+      Wants=network-online.target
+      ConditionPathExists=/opt/heartbeatz-firstboot.sh
+
+      [Service]
+      Type=oneshot
+      ExecStart=/opt/heartbeatz-firstboot.sh
+      RemainAfterExit=true
+      StandardOutput=journal+console
+
+      [Install]
+      WantedBy=multi-user.target
+      SERVICE
+
+    # Enable the first-boot service
+    - curtin in-target -- systemctl enable heartbeatz-firstboot.service

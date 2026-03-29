@@ -1,0 +1,334 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HeartBeatz — Boot &amp; Calibration Flow</title>
+<style>
+  :root {
+    --bg: #0f1117; --card: #1a1d27; --border: #2a2d3a;
+    --accent: #4f8cff; --accent2: #ff6b4f; --accent3: #34d399; --accent4: #f59e0b;
+    --text: #e2e8f0; --muted: #8892a4;
+  }
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { background:var(--bg); color:var(--text); font-family:'Inter','Segoe UI',system-ui,sans-serif; padding:24px; max-width:1200px; margin:0 auto; }
+  h1 { font-size:24px; font-weight:700; margin-bottom:6px; }
+  h2 { font-size:17px; font-weight:600; margin:28px 0 10px; color:var(--accent); border-bottom:1px solid var(--border); padding-bottom:6px; }
+  h3 { font-size:14px; font-weight:600; margin:16px 0 6px; color:var(--accent3); }
+  p { font-size:13px; line-height:1.65; color:var(--muted); margin:6px 0; }
+  .subtitle { color:var(--muted); font-size:13px; margin-bottom:20px; }
+  code { font-family:'Fira Code',monospace; font-size:11px; background:rgba(255,255,255,0.06); padding:1px 5px; border-radius:3px; color:var(--accent3); }
+
+  /* Flow timeline */
+  .timeline { position:relative; margin:20px 0 20px 24px; }
+  .timeline::before { content:''; position:absolute; left:0; top:0; bottom:0; width:2px; background:var(--border); }
+  .step { position:relative; padding:0 0 24px 32px; }
+  .step:last-child { padding-bottom:0; }
+  .step::before { content:''; position:absolute; left:-7px; top:4px; width:16px; height:16px; border-radius:8px; border:2px solid var(--accent); background:var(--bg); z-index:1; }
+  .step.auto::before { border-color:var(--accent3); background:var(--accent3); }
+  .step.user::before { border-color:var(--accent4); background:var(--accent4); }
+  .step.hw::before { border-color:var(--accent2); background:var(--accent2); }
+  .step-label { font-size:10px; text-transform:uppercase; letter-spacing:.5px; margin-bottom:2px; }
+  .step-label.auto { color:var(--accent3); }
+  .step-label.user { color:var(--accent4); }
+  .step-label.hw { color:var(--accent2); }
+  .step-title { font-weight:600; font-size:14px; margin-bottom:4px; }
+  .step-detail { font-size:12px; color:var(--muted); line-height:1.5; }
+  .step-time { font-size:11px; color:var(--accent); font-family:monospace; }
+  .step-tech { font-size:11px; color:var(--muted); background:var(--card); border:1px solid var(--border); border-radius:4px; padding:6px 10px; margin-top:6px; }
+
+  /* Cards */
+  .card-row { display:grid; grid-template-columns:repeat(auto-fit,minmax(280px,1fr)); gap:12px; margin:12px 0; }
+  .card { background:var(--card); border:1px solid var(--border); border-radius:8px; padding:14px; }
+  .card-title { font-weight:600; font-size:13px; margin-bottom:6px; }
+  .card-body { font-size:12px; color:var(--muted); line-height:1.5; }
+
+  /* Screen mockup */
+  .screen { background:#000; border:3px solid #333; border-radius:8px; padding:0; margin:12px 0; overflow:hidden; width:400px; aspect-ratio:800/480; position:relative; }
+  .screen-label { position:absolute; top:-18px; left:0; font-size:10px; color:var(--muted); }
+  .screen-content { width:100%; height:100%; display:flex; flex-direction:column; align-items:center; justify-content:center; padding:16px; }
+  .screen .logo-text { font-size:24px; font-weight:700; color:var(--accent); }
+  .screen .logo-text span { color:var(--accent2); }
+  .screen .status-text { font-size:11px; color:var(--muted); margin-top:8px; }
+  .screen .progress-bar { width:60%; height:4px; background:#222; border-radius:2px; margin-top:12px; overflow:hidden; }
+  .screen .progress-fill { height:100%; border-radius:2px; }
+
+  /* Node cards in screen */
+  .screen-nodes { display:flex; gap:8px; margin-top:12px; flex-wrap:wrap; justify-content:center; }
+  .screen-node { background:rgba(52,211,153,0.1); border:1px solid var(--accent3); border-radius:6px; padding:6px 10px; text-align:center; min-width:70px; }
+  .screen-node.offline { border-color:var(--border); background:rgba(255,255,255,0.02); }
+  .screen-node .node-id { font-size:10px; font-weight:600; color:var(--accent3); }
+  .screen-node.offline .node-id { color:var(--muted); }
+  .screen-node .node-rssi { font-size:9px; color:var(--muted); }
+
+  .screen-btn { background:var(--accent); color:#fff; border:none; border-radius:6px; padding:8px 20px; font-size:12px; font-weight:600; margin-top:12px; cursor:pointer; }
+  .screen-btn.secondary { background:transparent; border:1px solid var(--border); color:var(--muted); }
+
+  /* Two columns */
+  .two-col { display:grid; grid-template-columns:1fr 1fr; gap:20px; align-items:start; }
+  @media (max-width:800px) { .two-col { grid-template-columns:1fr; } }
+
+  table { width:100%; border-collapse:collapse; margin:8px 0; font-size:12px; }
+  th,td { text-align:left; padding:5px 8px; border-bottom:1px solid var(--border); }
+  th { color:var(--accent); font-size:11px; text-transform:uppercase; }
+</style>
+</head>
+<body>
+
+<h1>HeartBeatz — Boot &amp; Calibration Flow</h1>
+<p class="subtitle">Power on → auto-detect → calibrate → live sensing — fully touchscreen-driven, no keyboard needed</p>
+
+<h2>Complete Boot Sequence</h2>
+
+<div class="two-col">
+<div>
+<div class="timeline">
+
+  <div class="step hw">
+    <div class="step-label hw">Hardware</div>
+    <div class="step-title">Power On</div>
+    <div class="step-time">T+0s</div>
+    <div class="step-detail">Press power button on enclosure. UGREEN power bank feeds MeLE (USB-C PD) + Router (USB-A). Router boots in ~15s, MeLE in ~20s.</div>
+  </div>
+
+  <div class="step auto">
+    <div class="step-label auto">Automatic</div>
+    <div class="step-title">Ubuntu Auto-Login</div>
+    <div class="step-time">T+20s</div>
+    <div class="step-detail">MeLE boots Ubuntu 22.04, auto-login to <code>heartbeatz</code> user. No desktop environment — straight to kiosk.</div>
+    <div class="step-tech">
+      <code>systemd</code> auto-login via <code>getty</code> override → <code>~/.bash_profile</code> triggers kiosk script
+    </div>
+  </div>
+
+  <div class="step auto">
+    <div class="step-label auto">Automatic</div>
+    <div class="step-title">Docker Compose Up</div>
+    <div class="step-time">T+25s</div>
+    <div class="step-detail">Starts sensing-server container. Binds ports 3000 (REST), 3001 (WS), 5005/udp (CSI ingest). Server starts in <code>auto</code> source mode — probes for ESP32 nodes.</div>
+    <div class="step-tech">
+      <code>docker compose up -d</code> via systemd service, restart policy: <code>unless-stopped</code>
+    </div>
+  </div>
+
+  <div class="step auto">
+    <div class="step-label auto">Automatic</div>
+    <div class="step-title">Chromium Kiosk Launch</div>
+    <div class="step-time">T+30s</div>
+    <div class="step-detail">Chromium opens in kiosk mode (fullscreen, no address bar, no cursor) on VoCore display (800×480). Navigates to <code>http://localhost:3000/setup</code>.</div>
+    <div class="step-tech">
+      <code>chromium --kiosk --touch-events --noerrdialogs --disable-translate --no-first-run http://localhost:3000/setup</code>
+    </div>
+  </div>
+
+  <div class="step hw">
+    <div class="step-label hw">Hardware</div>
+    <div class="step-title">ESP32 Nodes Boot</div>
+    <div class="step-time">T+10-25s</div>
+    <div class="step-detail">Nodes power on from 18650 UPS, connect to HeartBeatz WiFi (10 retries), start streaming CSI frames to 192.168.8.10:5005. Boot takes ~5-8s, WiFi connect ~3-10s.</div>
+  </div>
+
+  <div class="step auto">
+    <div class="step-label auto">Automatic</div>
+    <div class="step-title">Setup Wizard — Splash Screen</div>
+    <div class="step-time">T+30s</div>
+    <div class="step-detail">VoCore shows HeartBeatz logo + "Starting up..." with animated progress. System waits for Docker health check to pass.</div>
+  </div>
+
+  <div class="step auto">
+    <div class="step-label auto">Automatic</div>
+    <div class="step-title">Setup Wizard — Node Discovery</div>
+    <div class="step-time">T+35s</div>
+    <div class="step-detail">Server detects ESP32 nodes as UDP frames arrive on :5005. Screen updates live: each node appears as a card with signal strength (RSSI) and node_id. Waits until at least 2 nodes are detected, or 60s timeout.</div>
+    <div class="step-tech">
+      REST poll: <code>GET /api/v1/sensing/latest</code> → check <code>nodes[]</code> array length and per-node RSSI
+    </div>
+  </div>
+
+  <div class="step user">
+    <div class="step-label user">User Touch</div>
+    <div class="step-title">Confirm Nodes → "Start Sensing"</div>
+    <div class="step-time">T+40-60s</div>
+    <div class="step-detail">User sees all detected nodes, verifies count is correct. Taps "Start Sensing" button. Optionally taps "Calibrate Room" for a 30s empty-room baseline scan (v2 feature).</div>
+  </div>
+
+  <div class="step auto">
+    <div class="step-label auto">Automatic</div>
+    <div class="step-title">Transition to Live View</div>
+    <div class="step-time">T+45-65s</div>
+    <div class="step-detail">Navigates to simple dashboard (default on VoCore) or Observatory 3D. Swipe left/right to toggle between views. Full Observatory available on laptop at <code>http://192.168.8.10:3000</code>.</div>
+  </div>
+
+</div>
+</div>
+
+<div>
+  <h3>Screen 1: Splash (T+30s)</h3>
+  <div class="screen">
+    <div class="screen-content">
+      <div class="logo-text">Heart<span>Beatz</span></div>
+      <div class="status-text">Starting sensing server...</div>
+      <div class="progress-bar"><div class="progress-fill" style="width:40%;background:var(--accent)"></div></div>
+    </div>
+  </div>
+
+  <h3>Screen 2: Node Discovery (T+35s)</h3>
+  <div class="screen">
+    <div class="screen-content" style="justify-content:flex-start;padding-top:24px">
+      <div style="font-size:14px;font-weight:600;color:var(--text)">Discovering Sensors...</div>
+      <div style="font-size:10px;color:var(--muted);margin-top:4px">Place nodes around the room and power them on</div>
+      <div class="screen-nodes">
+        <div class="screen-node">
+          <div class="node-id">Node 0</div>
+          <div class="node-rssi">-42 dBm</div>
+        </div>
+        <div class="screen-node">
+          <div class="node-id">Node 1</div>
+          <div class="node-rssi">-51 dBm</div>
+        </div>
+        <div class="screen-node">
+          <div class="node-id">Node 2</div>
+          <div class="node-rssi">-48 dBm</div>
+        </div>
+        <div class="screen-node offline">
+          <div class="node-id">Node 3</div>
+          <div class="node-rssi">waiting...</div>
+        </div>
+      </div>
+      <div style="font-size:10px;color:var(--accent3);margin-top:10px">3 of 4 nodes connected</div>
+      <div style="display:flex;gap:8px;margin-top:12px">
+        <button class="screen-btn">Start Sensing →</button>
+        <button class="screen-btn secondary">Calibrate Room</button>
+      </div>
+    </div>
+  </div>
+
+  <h3>Screen 3: Simple Dashboard (Live)</h3>
+  <div class="screen">
+    <div class="screen-content" style="justify-content:flex-start;padding:8px;background:#0a0c10">
+      <!-- Top bar -->
+      <div style="display:flex;justify-content:space-between;width:100%;padding:4px 8px;border-bottom:1px solid #1a1d27">
+        <div style="font-size:10px;font-weight:600;color:var(--accent)">Heart<span style="color:var(--accent2)">Beatz</span></div>
+        <div style="display:flex;gap:12px;font-size:9px;color:var(--muted)">
+          <span>4 nodes</span>
+          <span style="color:var(--accent3)">● Live</span>
+          <span>⇄ 3D</span>
+        </div>
+      </div>
+      <!-- Main area -->
+      <div style="display:flex;width:100%;flex:1;gap:8px;padding:8px 4px">
+        <!-- Room map -->
+        <div style="flex:1.2;background:#111;border:1px solid #222;border-radius:6px;position:relative;display:flex;align-items:center;justify-content:center">
+          <div style="font-size:9px;color:#333;position:absolute;top:4px;left:6px">Room Map</div>
+          <!-- Nodes -->
+          <div style="width:6px;height:6px;background:var(--accent3);border-radius:3px;position:absolute;top:15%;left:10%"></div>
+          <div style="width:6px;height:6px;background:var(--accent3);border-radius:3px;position:absolute;top:15%;right:10%"></div>
+          <div style="width:6px;height:6px;background:var(--accent3);border-radius:3px;position:absolute;bottom:15%;left:10%"></div>
+          <div style="width:6px;height:6px;background:var(--accent3);border-radius:3px;position:absolute;bottom:15%;right:10%"></div>
+          <!-- Person dot -->
+          <div style="width:14px;height:14px;background:rgba(79,140,255,0.3);border:2px solid var(--accent);border-radius:7px;position:absolute;top:40%;left:45%"></div>
+          <div style="font-size:8px;color:var(--accent);position:absolute;top:52%;left:42%">Person 1</div>
+        </div>
+        <!-- Vital signs -->
+        <div style="flex:0.8;display:flex;flex-direction:column;gap:6px">
+          <div style="background:#111;border:1px solid #222;border-radius:6px;padding:8px;flex:1">
+            <div style="font-size:8px;color:var(--muted);text-transform:uppercase">Heart Rate</div>
+            <div style="font-size:20px;font-weight:700;color:var(--accent2)">72</div>
+            <div style="font-size:8px;color:var(--muted)">BPM</div>
+          </div>
+          <div style="background:#111;border:1px solid #222;border-radius:6px;padding:8px;flex:1">
+            <div style="font-size:8px;color:var(--muted);text-transform:uppercase">Breathing</div>
+            <div style="font-size:20px;font-weight:700;color:var(--accent3)">16</div>
+            <div style="font-size:8px;color:var(--muted)">RPM</div>
+          </div>
+          <div style="background:#111;border:1px solid #222;border-radius:6px;padding:8px;flex:1">
+            <div style="font-size:8px;color:var(--muted);text-transform:uppercase">Motion</div>
+            <div style="font-size:14px;font-weight:600;color:var(--accent4)">Still</div>
+            <div style="font-size:8px;color:var(--muted)">Confidence 87%</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<h2>System Architecture — What Needs to Be Built</h2>
+
+<div class="card-row">
+  <div class="card">
+    <div class="card-title" style="color:var(--accent2)">1. Kiosk Boot Script</div>
+    <div class="card-body">
+      Shell script + systemd service that runs on MeLE boot:<br>
+      • Auto-login to <code>heartbeatz</code> user<br>
+      • Start Docker containers (sensing-server)<br>
+      • Wait for <code>/health</code> endpoint to respond<br>
+      • Launch Chromium in kiosk mode on VoCore display<br>
+      • Handle crash recovery (restart Chromium if it dies)<br><br>
+      <strong>File:</strong> <code>/opt/heartbeatz/kiosk.sh</code> + <code>heartbeatz-kiosk.service</code>
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:var(--accent4)">2. Setup Wizard UI</div>
+    <div class="card-body">
+      Single-page web app served at <code>/setup</code>:<br>
+      • Splash screen with boot progress<br>
+      • Node discovery (polls <code>/api/v1/sensing/latest</code>)<br>
+      • Node cards: ID, RSSI, status indicator<br>
+      • "Start Sensing" button → redirects to <code>/dashboard</code><br>
+      • "Calibrate Room" button → future v2 feature<br><br>
+      <strong>Optimized for:</strong> 800×480 touch, large tap targets (min 44px)
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:var(--accent3)">3. Simple Dashboard</div>
+    <div class="card-body">
+      Lightweight 2D view at <code>/dashboard</code>:<br>
+      • Room map with node positions + person dots<br>
+      • Vital signs cards (HR, BR, motion)<br>
+      • Node status bar (count, signal quality)<br>
+      • Swipe gesture or button to toggle → Observatory 3D<br><br>
+      <strong>Tech:</strong> Vanilla JS + Canvas, no Three.js (keeps it fast on VoCore)<br>
+      <strong>Data:</strong> WebSocket <code>/ws/sensing</code> for real-time updates
+    </div>
+  </div>
+  <div class="card">
+    <div class="card-title" style="color:var(--accent)">4. Observatory 3D (Adapted)</div>
+    <div class="card-body">
+      Existing Three.js Observatory, adapted for 800×480:<br>
+      • Reduce post-processing (no bloom on VoCore, save GPU)<br>
+      • Larger HUD text for small screen<br>
+      • Touch controls: swipe to orbit, pinch to zoom<br>
+      • Swipe right to go back to simple dashboard<br><br>
+      <strong>Note:</strong> Full Observatory still available at <code>:3000/observatory.html</code> on laptop browser via WiFi
+    </div>
+  </div>
+</div>
+
+<h2>Implementation Priority</h2>
+
+<table>
+  <tr><th>#</th><th>Component</th><th>Effort</th><th>Priority</th><th>Notes</th></tr>
+  <tr><td>1</td><td>Kiosk boot script + systemd service</td><td>~2h</td><td style="color:var(--accent2)">Must have</td><td>Power on → works. The core promise of the demo box.</td></tr>
+  <tr><td>2</td><td>Setup wizard (splash + node discovery)</td><td>~3h</td><td style="color:var(--accent2)">Must have</td><td>Shows something useful immediately. Confirms nodes are alive.</td></tr>
+  <tr><td>3</td><td>Simple dashboard (room map + vitals)</td><td>~4h</td><td style="color:var(--accent2)">Must have</td><td>The main VoCore view. Must be fast and touch-friendly.</td></tr>
+  <tr><td>4</td><td>Observatory 3D touch adaptation</td><td>~2h</td><td style="color:var(--accent4)">Nice to have</td><td>Impressive for demos but laptop browser works as fallback.</td></tr>
+  <tr><td>5</td><td>Room calibration (empty-room baseline)</td><td>~3h</td><td style="color:var(--muted)">v2</td><td>Improves accuracy. Not needed for first demo.</td></tr>
+  <tr><td>6</td><td>Room mapping (wall detection)</td><td>~8h</td><td style="color:var(--muted)">v3</td><td>Impressive but complex. After core works solid.</td></tr>
+  <tr><td>7</td><td>BLE wristband integration</td><td>~4h</td><td style="color:var(--muted)">v2</td><td>Firmware + server changes. After single-room demo works.</td></tr>
+</table>
+
+<h2>VoCore Display Setup</h2>
+
+<p>The VoCore 5" connects via USB-C and presents as a USB display device. Ubuntu needs <code>DisplayLink</code> driver or <code>udl</code> kernel module. Chromium targets this display via <code>--display=:0</code> with Xorg or via cage/wlroots Wayland compositor.</p>
+
+<table>
+  <tr><th>Option</th><th>Approach</th><th>Complexity</th></tr>
+  <tr><td>A: Xorg + xinit</td><td>Minimal X server, <code>xinit chromium</code> on VoCore display</td><td>Low — well documented</td></tr>
+  <tr><td>B: Cage (Wayland)</td><td>Single-app Wayland compositor, no window decorations</td><td>Low — modern, touch-friendly</td></tr>
+  <tr><td>C: Weston kiosk</td><td>Weston compositor in kiosk shell mode</td><td>Medium — more features than needed</td></tr>
+</table>
+<p><strong>Recommendation:</strong> Option A (Xorg + xinit) for v1 — simplest, most ESP32/embedded community docs available. Switch to Cage if touch issues arise.</p>
+
+</body>
+</html>

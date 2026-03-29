@@ -1,0 +1,99 @@
+# ==============================================================================
+# HeartBeatz Demo Box — Docker Compose
+# ==============================================================================
+# Runs both services needed for the portable demo:
+#   1. sensing-server: RuView Rust binary — CSI processing, REST API, WebSocket
+#   2. heartbeatz:     Node.js orchestration — UI, node discovery, BLE, radar
+#
+# Usage:
+#   docker compose up -d          # Start everything
+#   docker compose logs -f        # Watch logs
+#   docker compose down           # Stop
+#
+# First time:
+#   docker compose build          # Build local images
+#   docker compose up -d
+#
+# The kiosk script (install-kiosk.sh) runs this automatically on boot.
+
+services:
+  # ──────────────────────────────────────────────────────────────────────
+  # RuView Sensing Server (Rust/Axum)
+  # Processes raw CSI frames from ESP32 nodes over UDP, exposes REST + WS
+  # ──────────────────────────────────────────────────────────────────────
+  sensing-server:
+    image: ruvnet/wifi-densepose:latest
+    container_name: heartbeatz-sensing
+    restart: unless-stopped
+    ports:
+      - "3000:3000"      # REST API
+      - "3001:3001"      # WebSocket
+      - "5005:5005/udp"  # ESP32 CSI UDP ingest
+    environment:
+      - RUST_LOG=info
+      - CSI_SOURCE=${CSI_SOURCE:-auto}
+    command: >
+      /app/sensing-server
+      --source ${CSI_SOURCE:-auto}
+      --tick-ms ${SENSING_TICK_MS:-100}
+      --ui-path /app/ui
+      --http-port 3000
+      --ws-port 3001
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:3000/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 15s
+    networks:
+      - heartbeatz
+
+  # ──────────────────────────────────────────────────────────────────────
+  # HeartBeatz Orchestration Server (Node.js)
+  # Serves the kiosk UI, manages node discovery, proxies sensing API
+  # ──────────────────────────────────────────────────────────────────────
+  heartbeatz:
+    build:
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: heartbeatz-api
+    restart: unless-stopped
+    depends_on:
+      sensing-server:
+        condition: service_healthy
+    ports:
+      - "8080:8080"   # Kiosk UI + API (Chromium points here)
+    environment:
+      - NODE_ENV=production
+      - HEARTBEATZ_PORT=8080
+      - LOG_LEVEL=${LOG_LEVEL:-info}
+      # Point to the sensing server container
+      - SENSING_HTTP_PORT=3000
+      - SENSING_WS_PORT=3001
+      - SENSING_UDP_PORT=5005
+      - CSI_SOURCE=${CSI_SOURCE:-auto}
+      # Discovery
+      - DISCOVERY_INTERVAL_MS=${DISCOVERY_INTERVAL_MS:-5000}
+      - NODE_TIMEOUT_MS=${NODE_TIMEOUT_MS:-15000}
+      - NODE_SUBNET=${NODE_SUBNET:-192.168.1.0/24}
+      # BLE + Radar (disabled by default)
+      - BLE_ENABLED=${BLE_ENABLED:-false}
+      - RADAR_ENABLED=${RADAR_ENABLED:-false}
+      # Display
+      - DISPLAY_WIDTH=${DISPLAY_WIDTH:-1024}
+      - DISPLAY_HEIGHT=${DISPLAY_HEIGHT:-600}
+    volumes:
+      # Mount UI assets so they can be updated without rebuilding
+      - ./ui:/app/ui:ro
+      # Persistent state (calibration, node names, etc.)
+      - ./data:/app/data
+    # If BLE/radar are enabled, the container needs host device access:
+    # devices:
+    #   - /dev/ttyUSB0:/dev/ttyUSB0   # LD2410S radar
+    # network_mode: host               # Required for BLE hcitool
+    networks:
+      - heartbeatz
+
+networks:
+  heartbeatz:
+    driver: bridge
