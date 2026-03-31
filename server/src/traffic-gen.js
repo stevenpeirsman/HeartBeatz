@@ -14,7 +14,7 @@
 
 import dgram from 'dgram';
 
-const TARGET_IPS = (process.env.TARGET_IPS || '10.0.0.52,10.0.0.53').split(',');
+const TARGET_IPS = (process.env.TARGET_IPS || '10.0.0.52,10.0.0.53,10.0.0.54').split(',');
 const RATE_HZ = parseInt(process.env.RATE_HZ || '20', 10);
 const TARGET_PORT = 9999;  // Arbitrary port — ESP32 will ignore it but WiFi stack will see it
 

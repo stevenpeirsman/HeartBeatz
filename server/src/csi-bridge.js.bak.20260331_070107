@@ -1,16 +1,9 @@
 // ==============================================================================
-// CSI UDP-to-WebSocket Bridge — v3 (Rolling Recalibration + Heatmap)
+// CSI UDP-to-WebSocket Bridge — v2 (Improved Signal Processing)
 // ==============================================================================
 // Receives ADR-018 binary CSI frames from ESP32 nodes over UDP (port 5005),
 // processes them into vital-sign estimates, and broadcasts via WebSocket
 // (port 3001) in the format the HeartBeatz server expects.
-//
-// v3 Improvements over v2:
-//   - Rolling baseline recalibration (continuously adapts to environment changes)
-//   - CFAR-inspired person detection (Constant False Alarm Rate adaptive thresholds)
-//   - Per-subcarrier heatmap API for dev visualization (/api/heatmap)
-//   - Improved noise floor tracking with exponential aging
-//   - Environment change detection (furniture moved, doors opened, etc.)
 //
 // v2 Improvements over v1:
 //   - EMA smoothing on person count (eliminates 0-8 fluctuation)
@@ -19,13 +12,12 @@
 //   - Adaptive thresholds using running statistics
 //   - Actual measured sample rate instead of hardcoded 50 Hz
 //   - Bandpass-style filtering for vital sign extraction
-//   - Initial calibration phase to establish per-node baselines
+//   - Calibration phase to establish per-node baselines
 //
 // Architecture:
 //   ESP32 nodes ──UDP:5005──> [CSI Bridge] ──WS:3001──> HeartBeatz Server
 //                                  │
-//                              HTTP:3000 (/health, /api/nodes, /api/v1/sensing/latest,
-//                                         /api/heatmap, /api/diagnostics)
+//                              HTTP:3000 (/health, /api/nodes, /api/v1/sensing/latest)
 //
 // Usage: node csi-bridge.js
 // Env:   UDP_PORT=5005, HTTP_PORT=3000, WS_PORT=3001
@@ -33,9 +25,6 @@
 import dgram from 'dgram';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { readFileSync } from 'fs';
-import { join, dirname } from 'path';
-import { fileURLToPath } from 'url';
 
 // ---------------------------------------------------------------------------
 // Configuration
@@ -58,21 +47,6 @@ const EMA_MOTION       = 0.30;   // Fast — catch kids running quickly
 
 // Calibration: first N seconds establish baseline
 const CALIBRATION_FRAMES = 150;  // ~6s at 25 Hz (faster calibration)
-
-// ---------------------------------------------------------------------------
-// v3: Rolling Recalibration Configuration
-// ---------------------------------------------------------------------------
-// Instead of a one-shot calibration that can be poisoned by people present,
-// we continuously track the "quiet floor" — the lowest sustained variance
-// seen over a sliding window. This adapts to environmental changes (doors,
-// furniture, interference) while ignoring transient human presence.
-
-const RECAL_WINDOW_S      = 120;   // 2 minutes of history to find quiet periods
-const RECAL_INTERVAL_S    = 30;    // Re-evaluate baseline every 30 seconds
-const RECAL_QUIET_PCTILE  = 10;    // Use 10th percentile of variance as "quiet floor"
-const RECAL_MIN_FRAMES    = 500;   // Need at least 500 frames before first recalibration
-const RECAL_MAX_SHIFT     = 0.5;   // Max baseline shift per recalibration cycle (damping)
-const RECAL_BLEND_ALPHA   = 0.3;   // Blend new baseline with old (0=keep old, 1=fully new)
 
 // ---------------------------------------------------------------------------
 // Utility Functions
@@ -248,18 +222,6 @@ class NodeState {
     this.emaBreathingRate = null;
     this.emaMotionLevel = null;
 
-    // --- v3: Rolling recalibration state ---
-    this.varianceLog = [];           // Timestamped variance samples for recalibration
-    this.lastRecalTime = 0;          // Last time recalibration was evaluated
-    this.recalCount = 0;             // How many times we've recalibrated
-    this.baselineHistory = [];       // Track baseline evolution for diagnostics
-
-    // --- v3: Heatmap data (per-subcarrier amplitudes for visualization) ---
-    this.heatmapBuffer = [];         // Ring buffer of recent per-subcarrier amplitudes
-    this.heatmapBufferSize = 100;    // ~5 seconds at 20Hz — enough for smooth visualization
-    this.heatmapTimestamps = [];     // Corresponding timestamps
-    this.lastSubcarrierAmps = [];    // Most recent frame's per-subcarrier amplitudes
-
     // --- Final published estimates ---
     this.heartRate = 0;
     this.breathingRate = 0;
@@ -400,87 +362,6 @@ function calibrate(node) {
 }
 
 /**
- * v3: Rolling baseline recalibration.
- *
- * Tracks variance over a sliding window and periodically re-evaluates the
- * baseline using the quietest periods observed. This solves several problems:
- *   1. Calibration poisoned by people present at startup
- *   2. Environment drift (temperature changes, interference, furniture moves)
- *   3. Long-running sessions where the initial baseline becomes stale
- *
- * Uses a percentile approach (CFAR-inspired): the baseline is set to the
- * Nth percentile of recent variance, so transient human presence (high
- * variance) doesn't inflate it, but sustained environmental changes do.
- */
-function rollingRecalibrate(node) {
-  if (!node.calibrated) return;  // Wait for initial calibration first
-  if (node.frameCount < RECAL_MIN_FRAMES) return;
-
-  const now = Date.now();
-
-  // Log current variance sample for recalibration analysis
-  if (node.amplitudeHistory.length >= 20) {
-    const recentVar = variance(node.amplitudeHistory.slice(-20));
-    node.varianceLog.push({ t: now, v: recentVar });
-  }
-
-  // Trim old entries beyond the recalibration window
-  const cutoff = now - RECAL_WINDOW_S * 1000;
-  while (node.varianceLog.length > 0 && node.varianceLog[0].t < cutoff) {
-    node.varianceLog.shift();
-  }
-
-  // Only recalibrate at the configured interval
-  if (now - node.lastRecalTime < RECAL_INTERVAL_S * 1000) return;
-  node.lastRecalTime = now;
-
-  // Need enough variance samples to make a meaningful assessment
-  if (node.varianceLog.length < 30) return;
-
-  // Find the Nth percentile of variance = our "quiet floor" estimate
-  const sortedVars = node.varianceLog.map(e => e.v).sort((a, b) => a - b);
-  const pctileIdx = Math.floor(sortedVars.length * RECAL_QUIET_PCTILE / 100);
-  const quietFloor = sortedVars[Math.max(0, pctileIdx)];
-
-  // Damped update: don't shift too far in one step
-  const oldBaseline = node.baselineVariance;
-  const delta = quietFloor - oldBaseline;
-  const clampedDelta = Math.sign(delta) * Math.min(Math.abs(delta), RECAL_MAX_SHIFT);
-  const newBaseline = oldBaseline + clampedDelta * RECAL_BLEND_ALPHA;
-
-  // Apply same minimum floor as initial calibration
-  node.baselineVariance = Math.max(0.5, newBaseline);
-
-  // Also update baseline mean amplitude from quiet periods
-  // (use the amplitude mean from the same percentile window)
-  if (node.amplitudeHistory.length >= 50) {
-    const recentMean = mean(node.amplitudeHistory.slice(-50));
-    node.baselineMeanAmp = node.baselineMeanAmp * (1 - RECAL_BLEND_ALPHA * 0.5)
-                         + recentMean * (RECAL_BLEND_ALPHA * 0.5);
-  }
-
-  node.recalCount++;
-
-  // Track baseline evolution for diagnostics
-  node.baselineHistory.push({
-    t: now,
-    oldVar: oldBaseline,
-    newVar: node.baselineVariance,
-    quietFloor,
-    samples: node.varianceLog.length,
-  });
-  // Keep last 20 recalibration events
-  if (node.baselineHistory.length > 20) node.baselineHistory.shift();
-
-  // Log significant shifts
-  if (Math.abs(node.baselineVariance - oldBaseline) > 0.1) {
-    console.log(`[CSI] Node ${node.mac.slice(-5)} recalibrated (#${node.recalCount}): ` +
-      `baseline_var ${oldBaseline.toFixed(3)} → ${node.baselineVariance.toFixed(3)} ` +
-      `(quiet_floor=${quietFloor.toFixed(3)}, samples=${node.varianceLog.length})`);
-  }
-}
-
-/**
  * Estimate person count from CSI signal characteristics.
  *
  * Uses multiple metrics combined for robustness:
@@ -608,23 +489,18 @@ function estimatePersonCount(node) {
   // Hard cap per node: a single WiFi node can't reliably distinguish >5 people
   rawCount = Math.min(5, rawCount);
 
-  // --- v2.22: Absolute blendedVar floor detection ---
+  // --- v2.21: Absolute blendedVar floor detection ---
   // When the variance-based path is blinded by an inflated startup-calibration baseline
   // (noiseFloor = baselineVariance = 2.0 from startup noise, but current blendedVar is
-  // consistently 0.30-0.90 with a person present), detect presence via absolute level.
-  // Threshold 0.22 (v2.23: reverted from 0.30 back to 0.22) — diagnostic run 2026-03-31
-  // observed node 56:5c emaPersonCount declining 0.783→0.543 over 14s (ema_eq ≈ 0.306)
-  // because blendedVar oscillates 0.225–0.546 around the 0.30 threshold (breathing-driven).
-  // With threshold=0.30, ~1/3 of readings give rawCount=0, pulling ema below the 0.5 flip
-  // boundary and causing a false personCount=0. Lowering to 0.22 keeps all observed
-  // person-present readings above threshold (min blendedVar=0.225); ema_eq rises to ~0.51
-  // (stable at personCount=1). Node 36:24 current max blendedVar=0.340 → rawCount=0.343
-  // → ema_eq≈0.12, well below the 0.3 false-positive flip boundary. Accepted trade-off:
-  // if node 36:24 blendedVar spikes above ~0.51 for 15+ continuous seconds, a false count
-  // increment is possible — monitor in next run.
-  // Scale 0.35 preserved: 0.22 → 0, 0.57 → 1.0 person. Only activates when variance path = 0.
-  if (node.calibrated && rawCount === 0 && blendedVar > 0.22) {
-    rawCount = Math.min(1.0, (blendedVar - 0.22) / 0.35);
+  // consistently 0.25-0.90 with a person present), detect presence via absolute level.
+  // v2.22: raised threshold 0.22→0.25 — observed empty-room node 56:5c blendedVar
+  //        swinging 0.07→0.26 over 15s, crossing 0.22 and generating phantom
+  //        rawPersonCounts (0.08-0.12) that pushed emaPersonCount from 0→0.15.
+  //        Threshold 0.25 eliminates most empty-room false triggers while still
+  //        detecting occupied-room blendedVar (0.28-0.50 on node 36:24).
+  // Scale 0.35: 0.25 → 0, 0.60 → 1.0 person. Only activates when variance path = 0.
+  if (node.calibrated && rawCount === 0 && blendedVar > 0.25) {
+    rawCount = Math.min(1.0, (blendedVar - 0.25) / 0.35);
   }
 
   node.rawPersonCount = rawCount;
@@ -774,15 +650,6 @@ function processFrame(frame) {
     node.subcarrierHistory.shift();
   }
 
-  // v3: Heatmap buffer (per-subcarrier amplitudes for dev visualization)
-  node.lastSubcarrierAmps = amps;
-  node.heatmapBuffer.push(amps);
-  node.heatmapTimestamps.push(Date.now());
-  if (node.heatmapBuffer.length > node.heatmapBufferSize) {
-    node.heatmapBuffer.shift();
-    node.heatmapTimestamps.shift();
-  }
-
   // --- Motion Detection (with EMA) ---
   const recentVariance = mean(node.varianceHistory);
   node.emaMotionLevel = emaUpdate(node.emaMotionLevel, recentVariance, EMA_MOTION);
@@ -805,9 +672,6 @@ function processFrame(frame) {
 
   // --- Calibration ---
   calibrate(node);
-
-  // --- v3: Rolling Recalibration (adapts baseline to environment changes) ---
-  rollingRecalibrate(node);
 
   // --- Person Count (with EMA + adaptive thresholds) ---
   estimatePersonCount(node);
@@ -955,32 +819,15 @@ function broadcast(data) {
 // HTTP API (port 3000)
 // ---------------------------------------------------------------------------
 
-// Resolve __dirname for ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
 const httpServer = http.createServer((req, res) => {
   res.setHeader('Access-Control-Allow-Origin', '*');
-
-  // v3: Serve dev heatmap page
-  if (req.url === '/dev-heatmap' || req.url === '/dev-heatmap.html') {
-    try {
-      const html = readFileSync(join(__dirname, '..', 'public', 'dev-heatmap.html'), 'utf8');
-      res.writeHead(200, { 'Content-Type': 'text/html' });
-      res.end(html);
-    } catch (e) {
-      res.writeHead(500);
-      res.end('Dev heatmap file not found: ' + e.message);
-    }
-    return;
-  }
 
   if (req.url === '/health' || req.url === '/api/health') {
     const activeNodes = [...nodes.values()].filter(n => Date.now() - n.lastSeen < 10000);
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       status: 'ok',
-      version: 3,
+      version: 2,
       source: 'udp',
       clients: wsClients.size,
       nodes: activeNodes.length,
@@ -1060,102 +907,14 @@ const httpServer = http.createServer((req, res) => {
       blendedVar: n.blendedVar || 0,
       effectiveVar: n.effectiveVar || 0,
       excessVar: n.excessVar || 0,
-      // v3: Rolling recalibration diagnostics
-      recalCount: n.recalCount || 0,
-      varianceLogLen: (n.varianceLog || []).length,
-      baselineHistory: (n.baselineHistory || []).slice(-5).map(e => ({
-        t: e.t,
-        oldVar: e.oldVar?.toFixed(4),
-        newVar: e.newVar?.toFixed(4),
-        quietFloor: e.quietFloor?.toFixed(4),
-      })),
     }));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({
       uptime_s: Math.floor((Date.now() - startTime) / 1000),
-      version: 3,
       totalFrames,
       wsClients: wsClients.size,
       nodes: diag,
     }));
-
-  } else if (req.url === '/api/heatmap') {
-    // v3: Per-subcarrier heatmap data for dev visualization
-    // Returns recent per-subcarrier amplitude data for each active node
-    const heatmap = [...nodes.values()]
-      .filter(n => Date.now() - n.lastSeen < 10000)
-      .map(n => ({
-        mac: n.mac,
-        sampleRate: parseFloat(n.measuredSampleRate.toFixed(1)),
-        personCount: n.personCount,
-        emaPersonCount: parseFloat((n.emaPersonCount || 0).toFixed(3)),
-        blendedVar: parseFloat((n.blendedVar || 0).toFixed(4)),
-        effectiveVar: parseFloat((n.effectiveVar || 0).toFixed(4)),
-        noiseFloor: parseFloat((n.noiseLevel || 0).toFixed(4)),
-        baselineVariance: parseFloat((n.baselineVariance || 0).toFixed(4)),
-        recalCount: n.recalCount || 0,
-        // Current frame: per-subcarrier amplitudes
-        currentAmps: n.lastSubcarrierAmps || [],
-        // Historical: last N frames of per-subcarrier data (downsampled for bandwidth)
-        // Send every 5th frame to keep payload manageable
-        history: {
-          timestamps: n.heatmapTimestamps.filter((_, i) => i % 5 === 0),
-          // Each entry is an array of subcarrier amplitudes
-          frames: n.heatmapBuffer.filter((_, i) => i % 5 === 0),
-        },
-        // Per-subcarrier statistics (mean and variance over recent window)
-        subcarrierStats: (() => {
-          if (n.subcarrierHistory.length < 5) return { means: [], variances: [] };
-          const nSubs = n.subcarrierHistory[0]?.length || 0;
-          const means = [];
-          const variances = [];
-          for (let sc = 0; sc < nSubs; sc++) {
-            const series = n.subcarrierHistory.map(f => f[sc] || 0);
-            means.push(parseFloat(mean(series).toFixed(2)));
-            variances.push(parseFloat(variance(series).toFixed(2)));
-          }
-          return { means, variances };
-        })(),
-        // Baseline evolution (for diagnostics chart)
-        baselineHistory: (n.baselineHistory || []).map(e => ({
-          t: e.t,
-          oldVar: parseFloat(e.oldVar.toFixed(4)),
-          newVar: parseFloat(e.newVar.toFixed(4)),
-          quietFloor: parseFloat(e.quietFloor.toFixed(4)),
-        })),
-      }));
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ timestamp: Date.now(), nodes: heatmap }));
-
-  } else if (req.url === '/api/heatmap/stream') {
-    // v3: Server-Sent Events stream for real-time heatmap updates
-    res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
-    });
-    res.write('retry: 200\n\n');
-
-    const interval = setInterval(() => {
-      const data = [...nodes.values()]
-        .filter(n => Date.now() - n.lastSeen < 10000)
-        .map(n => ({
-          mac: n.mac,
-          personCount: n.personCount,
-          emaPersonCount: parseFloat((n.emaPersonCount || 0).toFixed(3)),
-          blendedVar: parseFloat((n.blendedVar || 0).toFixed(4)),
-          effectiveVar: parseFloat((n.effectiveVar || 0).toFixed(4)),
-          baselineVariance: parseFloat((n.baselineVariance || 0).toFixed(4)),
-          currentAmps: n.lastSubcarrierAmps || [],
-          motionState: n.motionState,
-          heartRate: n.heartRate,
-          breathingRate: n.breathingRate,
-        }));
-      res.write(`data: ${JSON.stringify({ t: Date.now(), nodes: data })}\n\n`);
-    }, 200);  // 5 Hz update rate for smooth visualization
-
-    req.on('close', () => clearInterval(interval));
 
   } else {
     res.writeHead(404);
@@ -1292,16 +1051,14 @@ setInterval(() => {
 // ---------------------------------------------------------------------------
 
 udpSocket.bind(UDP_PORT, () => {
-  console.log(`[CSI Bridge v3] UDP receiver listening on 0.0.0.0:${UDP_PORT}`);
+  console.log(`[CSI Bridge v2] UDP receiver listening on 0.0.0.0:${UDP_PORT}`);
 });
 
 httpServer.listen(HTTP_PORT, () => {
-  console.log(`[CSI Bridge v3] HTTP API on http://localhost:${HTTP_PORT}/health`);
-  console.log(`[CSI Bridge v3] Diagnostics: http://localhost:${HTTP_PORT}/api/diagnostics`);
-  console.log(`[CSI Bridge v3] Dev Heatmap: http://localhost:${HTTP_PORT}/api/heatmap`);
-  console.log(`[CSI Bridge v3] SSE Stream:  http://localhost:${HTTP_PORT}/api/heatmap/stream`);
+  console.log(`[CSI Bridge v2] HTTP API on http://localhost:${HTTP_PORT}/health`);
+  console.log(`[CSI Bridge v2] Diagnostics: http://localhost:${HTTP_PORT}/api/diagnostics`);
 });
 
-console.log(`[CSI Bridge v3] WebSocket server on ws://localhost:${WS_PORT}/ws/sensing`);
-console.log(`[CSI Bridge v3] Ready — waiting for ESP32 CSI frames...`);
-console.log(`[CSI Bridge v3] v3: Rolling recalibration, CFAR detection, dev heatmap`);
+console.log(`[CSI Bridge v2] WebSocket server on ws://localhost:${WS_PORT}/ws/sensing`);
+console.log(`[CSI Bridge v2] Ready — waiting for ESP32 CSI frames...`);
+console.log(`[CSI Bridge v2] Improvements: EMA smoothing, autocorrelation, multi-node fusion`);

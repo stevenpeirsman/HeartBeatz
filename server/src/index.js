@@ -37,6 +37,9 @@ import { OtaManager } from './ota-manager.js';
 import { WsHub } from './websocket.js';
 import { createApiRouter } from './routes/api.js';
 import { createOtaRouter } from './routes/ota.js';
+import { createApiV1Router } from './routes/api-v1.js';
+import { connectRadarToStore } from './routes/radar-sse.js';
+import { initDatabase, closeDatabase } from './db/index.js';
 import {
   requestIdMiddleware,
   notFoundHandler,
@@ -64,6 +67,9 @@ async function main() {
 
   logger.info('=== HeartBeatz Server Starting ===');
   logger.info({ port: config.port, env: config.nodeEnv, csiSource: config.sensing.source });
+
+  // --- Initialize SQLite database (auto-creates tables on first run) ---
+  initDatabase({ logger });
 
   // --- Determine demo mode ---
   // 'true' → always simulate, 'auto' → simulate if sensing server unreachable, 'false' → never
@@ -133,6 +139,16 @@ async function main() {
     demoMode, loadState, saveState, logger,
   };
   app.use('/api', createApiRouter(services));
+
+  // --- Mount v1 API routes (database-backed: ground truth, nodes, radar, etc.) ---
+  const v1 = createApiV1Router({ logger });
+  app.use('/api/v1', v1.router);
+
+  // --- Bridge radar hardware events to SSE store (SENSOR-02) ---
+  let radarBridgeCleanup = null;
+  if (radar && v1.radarStore) {
+    radarBridgeCleanup = connectRadarToStore(radar, v1.radarStore, logger);
+  }
 
   // --- Mount OTA firmware routes (raw body for binary uploads) ---
   app.use('/api/firmware', createOtaRouter({
@@ -215,6 +231,7 @@ async function main() {
   const shutdown = async (signal) => {
     logger.info({ signal }, 'Shutting down...');
     healthMonitor.stop();
+    if (radarBridgeCleanup) radarBridgeCleanup();
     if (simulator) {
       simulator.stop();
     } else {
@@ -223,6 +240,7 @@ async function main() {
       radar.stop();
     }
     wsHub.stop();
+    closeDatabase(logger);
     server.close(() => {
       logger.info('Server closed');
       process.exit(0);

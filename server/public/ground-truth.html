@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<!--
+  HeartBeatz Ground Truth Label Collection UI (ACC-08-T2)
+  =======================================================
+  Developer tool for recording person count observations in real time.
+  Large buttons for 0/1/2/3+ person counts, keyboard shortcuts, live
+  CSI context via SSE, and session management.
+
+  Keyboard shortcuts:
+    0-3   — Record label (person count)
+    S     — Start new session
+    E     — End current session
+    Space — Quick toggle pause/resume
+
+  Same aesthetic as dev-heatmap.html: functional, not pretty.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HeartBeatz — Ground Truth Labeling</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Courier New', monospace;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      background: #16213e;
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #0f3460;
+    }
+    header h1 { font-size: 1.2rem; color: #e94560; }
+    .session-info {
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+    .session-info .badge {
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-weight: bold;
+    }
+    .badge-active { background: #2ecc71; color: #000; }
+    .badge-none { background: #555; color: #ccc; }
+
+    /* Main layout */
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 300px;
+      flex: 1;
+      gap: 0;
+    }
+
+    /* Left panel: big buttons */
+    .label-panel {
+      display: flex;
+      flex-direction: column;
+      padding: 20px;
+      gap: 16px;
+    }
+
+    .label-buttons {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 16px;
+      flex: 1;
+    }
+
+    .label-btn {
+      font-size: 3rem;
+      font-weight: bold;
+      border: 3px solid #333;
+      border-radius: 12px;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.15s ease;
+      min-height: 140px;
+      user-select: none;
+    }
+    .label-btn:hover { transform: scale(1.03); }
+    .label-btn:active { transform: scale(0.97); }
+    .label-btn .count { font-size: 4rem; }
+    .label-btn .shortcut { font-size: 0.8rem; opacity: 0.6; margin-top: 4px; }
+
+    .btn-0 { background: #2c3e50; border-color: #34495e; color: #95a5a6; }
+    .btn-0:hover { background: #34495e; }
+    .btn-1 { background: #1a5276; border-color: #2980b9; color: #3498db; }
+    .btn-1:hover { background: #2471a3; }
+    .btn-2 { background: #1e4d2b; border-color: #27ae60; color: #2ecc71; }
+    .btn-2:hover { background: #239b56; }
+    .btn-3 { background: #6c3483; border-color: #8e44ad; color: #bb8fce; }
+    .btn-3:hover { background: #7d3c98; }
+
+    .label-btn.flash { animation: flash-confirm 0.3s ease; }
+    @keyframes flash-confirm {
+      0% { filter: brightness(1); }
+      50% { filter: brightness(1.8); }
+      100% { filter: brightness(1); }
+    }
+
+    .label-btn:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+      transform: none !important;
+    }
+
+    /* Session controls */
+    .session-controls {
+      display: flex;
+      gap: 8px;
+    }
+    .session-controls button {
+      flex: 1;
+      padding: 10px;
+      font-family: inherit;
+      font-size: 0.9rem;
+      border: 1px solid #444;
+      border-radius: 6px;
+      cursor: pointer;
+      background: #2c3e50;
+      color: #e0e0e0;
+    }
+    .session-controls button:hover { background: #34495e; }
+    .session-controls button:disabled { opacity: 0.4; cursor: not-allowed; }
+    .btn-start { border-color: #27ae60 !important; }
+    .btn-end { border-color: #e74c3c !important; }
+
+    /* Right panel: live context + history */
+    .sidebar {
+      background: #16213e;
+      border-left: 2px solid #0f3460;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+
+    .sidebar h3 {
+      padding: 10px 14px;
+      font-size: 0.85rem;
+      color: #e94560;
+      border-bottom: 1px solid #0f3460;
+    }
+
+    /* Live context */
+    .live-context {
+      padding: 10px 14px;
+      font-size: 0.8rem;
+      border-bottom: 1px solid #0f3460;
+    }
+    .live-context .metric {
+      display: flex;
+      justify-content: space-between;
+      padding: 3px 0;
+    }
+    .metric-label { color: #888; }
+    .metric-value { color: #3498db; font-weight: bold; }
+
+    /* Label history */
+    .label-history {
+      flex: 1;
+      overflow-y: auto;
+      padding: 8px;
+    }
+    .history-item {
+      display: flex;
+      justify-content: space-between;
+      padding: 5px 8px;
+      border-radius: 4px;
+      margin-bottom: 3px;
+      font-size: 0.8rem;
+    }
+    .history-item:nth-child(odd) { background: rgba(255,255,255,0.03); }
+    .history-count { font-weight: bold; width: 30px; }
+    .history-time { color: #666; }
+
+    /* Stats bar */
+    .stats-bar {
+      padding: 10px 14px;
+      border-top: 1px solid #0f3460;
+      font-size: 0.8rem;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 4px;
+    }
+
+    /* Status toast */
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      padding: 10px 24px;
+      border-radius: 6px;
+      font-size: 1rem;
+      font-weight: bold;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+      z-index: 100;
+    }
+    .toast.show { opacity: 1; }
+    .toast-success { background: #27ae60; color: #fff; }
+    .toast-error { background: #e74c3c; color: #fff; }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>Ground Truth Labeling</h1>
+  <div class="session-info">
+    <span id="session-status" class="badge badge-none">No Session</span>
+    <span id="session-name"></span>
+    <span id="label-counter">Labels: 0</span>
+  </div>
+</header>
+
+<div class="container">
+  <!-- Left: Big label buttons -->
+  <div class="label-panel">
+    <div class="session-controls">
+      <button class="btn-start" id="btn-start-session" onclick="startSession()">
+        Start Session (S)
+      </button>
+      <button class="btn-end" id="btn-end-session" onclick="endSession()" disabled>
+        End Session (E)
+      </button>
+    </div>
+
+    <div class="label-buttons">
+      <button class="label-btn btn-0" id="btn-label-0" onclick="recordLabel(0)" disabled>
+        <span class="count">0</span>
+        <span>Empty</span>
+        <span class="shortcut">Key: 0</span>
+      </button>
+      <button class="label-btn btn-1" id="btn-label-1" onclick="recordLabel(1)" disabled>
+        <span class="count">1</span>
+        <span>One Person</span>
+        <span class="shortcut">Key: 1</span>
+      </button>
+      <button class="label-btn btn-2" id="btn-label-2" onclick="recordLabel(2)" disabled>
+        <span class="count">2</span>
+        <span>Two People</span>
+        <span class="shortcut">Key: 2</span>
+      </button>
+      <button class="label-btn btn-3" id="btn-label-3" onclick="recordLabel(3)" disabled>
+        <span class="count">3</span>
+        <span>Three+</span>
+        <span class="shortcut">Key: 3</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Right: Context + History -->
+  <div class="sidebar">
+    <h3>Live Context</h3>
+    <div class="live-context" id="live-context">
+      <div class="metric">
+        <span class="metric-label">Predicted Count:</span>
+        <span class="metric-value" id="ctx-predicted">—</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Confidence:</span>
+        <span class="metric-value" id="ctx-confidence">—</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Active Nodes:</span>
+        <span class="metric-value" id="ctx-nodes">—</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">Frame Rate:</span>
+        <span class="metric-value" id="ctx-fps">—</span>
+      </div>
+      <div class="metric">
+        <span class="metric-label">EMA Variance:</span>
+        <span class="metric-value" id="ctx-variance">—</span>
+      </div>
+    </div>
+
+    <h3>Label History</h3>
+    <div class="label-history" id="label-history">
+      <div style="padding: 20px; text-align: center; color: #555;">
+        Start a session to begin labeling
+      </div>
+    </div>
+
+    <div class="stats-bar" id="stats-bar">
+      <div><span class="metric-label">0:</span> <span id="stat-0">0</span></div>
+      <div><span class="metric-label">1:</span> <span id="stat-1">0</span></div>
+      <div><span class="metric-label">2:</span> <span id="stat-2">0</span></div>
+      <div><span class="metric-label">3+:</span> <span id="stat-3">0</span></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ===========================================================================
+// State
+// ===========================================================================
+let currentSession = null;
+let labelCount = 0;
+let stats = [0, 0, 0, 0];
+let history = [];
+let eventSource = null;
+
+const API_BASE = '/api/v1';
+
+// ===========================================================================
+// Session Management
+// ===========================================================================
+
+async function startSession() {
+  try {
+    const annotator = prompt('Your name (or press Enter for anonymous):') || 'anonymous';
+    const res = await fetch(`${API_BASE}/ground-truth/sessions`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ annotator }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+
+    currentSession = json.data;
+    labelCount = 0;
+    stats = [0, 0, 0, 0];
+    history = [];
+    updateUI();
+    showToast('Session started!', 'success');
+    connectSSE();
+  } catch (err) {
+    showToast('Failed to start session: ' + err.message, 'error');
+  }
+}
+
+async function endSession() {
+  if (!currentSession) return;
+  try {
+    const res = await fetch(`${API_BASE}/ground-truth/sessions/${currentSession.id}/end`, {
+      method: 'POST',
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+
+    showToast(`Session ended — ${labelCount} labels recorded`, 'success');
+    currentSession = null;
+    // Close SSE connection when session ends
+    if (eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+    updateUI();
+  } catch (err) {
+    showToast('Failed to end session: ' + err.message, 'error');
+  }
+}
+
+// ===========================================================================
+// Label Recording
+// ===========================================================================
+
+async function recordLabel(count) {
+  if (!currentSession) return;
+
+  try {
+    const res = await fetch(`${API_BASE}/ground-truth/labels`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        session_id: currentSession.id,
+        true_count: count,
+        annotator: currentSession.annotator,
+      }),
+    });
+    const json = await res.json();
+    if (!json.ok) throw new Error(json.error);
+
+    // Update local state
+    labelCount++;
+    stats[count]++;
+    history.unshift({ count, time: new Date().toLocaleTimeString() });
+    if (history.length > 50) history.pop();
+
+    // Flash the button
+    const btn = document.getElementById(`btn-label-${count}`);
+    btn.classList.add('flash');
+    setTimeout(() => btn.classList.remove('flash'), 300);
+
+    updateUI();
+  } catch (err) {
+    showToast('Failed to record: ' + err.message, 'error');
+  }
+}
+
+// ===========================================================================
+// SSE for Live Context
+// ===========================================================================
+// Uses Server-Sent Events (EventSource) to match project conventions.
+// The features API at /api/v1/features/stream provides live CSI feature
+// vectors at 5Hz, which gives the labeler real-time context during annotation.
+
+function connectSSE() {
+  // Close existing connection if any
+  if (eventSource) {
+    eventSource.close();
+    eventSource = null;
+  }
+
+  const streamUrl = `${API_BASE}/features/stream`;
+  eventSource = new EventSource(streamUrl);
+
+  eventSource.addEventListener('features', (event) => {
+    try {
+      const msg = JSON.parse(event.data);
+      updateLiveContext(msg);
+    } catch { /* ignore parse errors */ }
+  });
+
+  eventSource.onerror = () => {
+    // EventSource auto-reconnects, but if session ended, close it
+    if (!currentSession && eventSource) {
+      eventSource.close();
+      eventSource = null;
+    }
+  };
+}
+
+let frameCounter = 0;
+let lastFpsCheck = Date.now();
+let currentFps = 0;
+
+function updateLiveContext(msg) {
+  // Frame rate calculation
+  frameCounter++;
+  const now = Date.now();
+  if (now - lastFpsCheck >= 1000) {
+    currentFps = frameCounter;
+    frameCounter = 0;
+    lastFpsCheck = now;
+  }
+
+  const el = (id) => document.getElementById(id);
+  el('ctx-predicted').textContent = msg.personCount ?? msg.data?.personCount ?? '—';
+  el('ctx-confidence').textContent = msg.confidence != null
+    ? (msg.confidence * 100).toFixed(0) + '%'
+    : '—';
+  el('ctx-nodes').textContent = msg.activeNodes ?? '—';
+  el('ctx-fps').textContent = currentFps + ' Hz';
+  el('ctx-variance').textContent = msg.emaVariance != null
+    ? msg.emaVariance.toFixed(2)
+    : '—';
+}
+
+// ===========================================================================
+// UI Updates
+// ===========================================================================
+
+function updateUI() {
+  const hasSession = currentSession !== null;
+
+  // Session status
+  const badge = document.getElementById('session-status');
+  badge.textContent = hasSession ? 'Active' : 'No Session';
+  badge.className = 'badge ' + (hasSession ? 'badge-active' : 'badge-none');
+
+  document.getElementById('session-name').textContent = hasSession
+    ? currentSession.name
+    : '';
+
+  document.getElementById('label-counter').textContent = `Labels: ${labelCount}`;
+
+  // Enable/disable buttons
+  document.getElementById('btn-start-session').disabled = hasSession;
+  document.getElementById('btn-end-session').disabled = !hasSession;
+  for (let i = 0; i <= 3; i++) {
+    document.getElementById(`btn-label-${i}`).disabled = !hasSession;
+  }
+
+  // Stats
+  for (let i = 0; i <= 3; i++) {
+    document.getElementById(`stat-${i}`).textContent = stats[i];
+  }
+
+  // History
+  const histEl = document.getElementById('label-history');
+  if (history.length === 0) {
+    histEl.innerHTML = '<div style="padding: 20px; text-align: center; color: #555;">' +
+      (hasSession ? 'Press 0-3 to record labels' : 'Start a session to begin labeling') +
+      '</div>';
+  } else {
+    histEl.innerHTML = history.map(h => `
+      <div class="history-item">
+        <span class="history-count">${h.count === 3 ? '3+' : h.count}</span>
+        <span class="history-time">${h.time}</span>
+      </div>
+    `).join('');
+  }
+}
+
+// ===========================================================================
+// Toast Notifications
+// ===========================================================================
+
+let toastTimeout;
+function showToast(msg, type = 'success') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast toast-${type} show`;
+  clearTimeout(toastTimeout);
+  toastTimeout = setTimeout(() => el.classList.remove('show'), 2000);
+}
+
+// ===========================================================================
+// Keyboard Shortcuts
+// ===========================================================================
+
+document.addEventListener('keydown', (e) => {
+  // Don't capture when in an input/prompt
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
+
+  switch (e.key) {
+    case '0': recordLabel(0); break;
+    case '1': recordLabel(1); break;
+    case '2': recordLabel(2); break;
+    case '3': recordLabel(3); break;
+    case 's':
+    case 'S':
+      if (!currentSession) startSession();
+      break;
+    case 'e':
+    case 'E':
+      if (currentSession) endSession();
+      break;
+  }
+});
+
+// ===========================================================================
+// Init
+// ===========================================================================
+
+// Load any active session on page load
+(async () => {
+  try {
+    const res = await fetch(`${API_BASE}/ground-truth/sessions?status=active&limit=1`);
+    const json = await res.json();
+    if (json.ok && json.data.length > 0) {
+      currentSession = json.data[0];
+      labelCount = currentSession.label_count || 0;
+      // Load distribution
+      const detailRes = await fetch(`${API_BASE}/ground-truth/sessions/${currentSession.id}`);
+      const detail = await detailRes.json();
+      if (detail.ok && detail.data.distribution) {
+        const d = detail.data.distribution;
+        stats = [d.count_0, d.count_1, d.count_2, d.count_3];
+      }
+      connectSSE();
+    }
+  } catch { /* fresh start */ }
+  updateUI();
+})();
+</script>
+</body>
+</html>

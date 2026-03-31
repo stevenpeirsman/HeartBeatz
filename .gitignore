@@ -1,14 +1,41 @@
+# Dependencies
 node_modules/
-data/firmware/
-data/floorplan.png
-state.json
-.env
+.npm/
+
+# Build artifacts
+firmware/.pio/
+firmware/.vscode/
+firmware/sdkconfig
+firmware/sdkconfig.old
+
+# IDE
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
 *.log
-**/.pio/
-**/.vscode/
-__pycache__/
-*.pyc
-*.o
-*.a
-*.elf
-*.map
+/tmp/
+
+# Environment
+.env
+.env.local
+
+# Compiled firmware binaries (too large for git)
+firmware/.pio/build/
+
+# Docker volumes
+data/
+
+# 3D CAD exports (binary, regenerated from .py source)
+*.step
+*.stl
+
+# Auto-improve logs (runtime artifact)
+auto-improve-log.md
+logs/

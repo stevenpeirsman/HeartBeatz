@@ -1,0 +1,864 @@
+<!DOCTYPE html>
+<!--
+  HeartBeatz Node Admin UI (ADMIN-03)
+  ====================================
+  Developer tool for managing ESP32 sensor nodes. View registered nodes,
+  add/edit names and properties, delete nodes, monitor status/firmware/last_seen.
+
+  Uses the /api/v1/nodes REST API (ADMIN-02) for all CRUD operations.
+
+  Same aesthetic as dev-heatmap.html and ground-truth.html: functional, not pretty.
+-->
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HeartBeatz — Node Administration</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    /* Header */
+    header {
+      background: #16213e;
+      padding: 12px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 2px solid #0f3460;
+    }
+    header h1 { font-size: 1.2rem; color: #00d4ff; }
+    .header-right {
+      display: flex;
+      gap: 12px;
+      align-items: center;
+      font-size: 0.85rem;
+    }
+    .node-count {
+      padding: 3px 10px;
+      border-radius: 4px;
+      font-weight: bold;
+      background: #0f3460;
+      color: #00d4ff;
+    }
+
+    /* Main layout */
+    .container {
+      display: grid;
+      grid-template-columns: 1fr 380px;
+      flex: 1;
+      gap: 0;
+    }
+
+    /* Left panel: node table */
+    .table-panel {
+      padding: 16px;
+      overflow-y: auto;
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      align-items: center;
+    }
+
+    .toolbar input[type="text"] {
+      background: #111122;
+      border: 1px solid #2a2a4a;
+      color: #e0e0e0;
+      padding: 6px 12px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.85rem;
+      flex: 1;
+      max-width: 300px;
+    }
+
+    .toolbar select {
+      background: #111122;
+      border: 1px solid #2a2a4a;
+      color: #e0e0e0;
+      padding: 6px 8px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.85rem;
+    }
+
+    .btn {
+      padding: 6px 14px;
+      border: none;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.85rem;
+      cursor: pointer;
+      font-weight: bold;
+      transition: background 0.15s, transform 0.1s;
+    }
+    .btn:hover { transform: scale(1.02); }
+    .btn:active { transform: scale(0.98); }
+
+    .btn-primary { background: #00d4ff; color: #000; }
+    .btn-primary:hover { background: #33ddff; }
+    .btn-danger { background: #e94560; color: #fff; }
+    .btn-danger:hover { background: #ff5a75; }
+    .btn-secondary { background: #2a2a4a; color: #ccc; }
+    .btn-secondary:hover { background: #3a3a5a; }
+    .btn-success { background: #2ecc71; color: #000; }
+    .btn-success:hover { background: #45d98a; }
+    .btn-sm { padding: 3px 8px; font-size: 0.8rem; }
+
+    /* Node table */
+    .node-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 0.85rem;
+    }
+    .node-table th {
+      text-align: left;
+      padding: 8px 10px;
+      background: #111122;
+      color: #888;
+      font-weight: 600;
+      border-bottom: 2px solid #2a2a4a;
+      position: sticky;
+      top: 0;
+      white-space: nowrap;
+    }
+    .node-table td {
+      padding: 8px 10px;
+      border-bottom: 1px solid #1a1a3a;
+      vertical-align: middle;
+    }
+    .node-table tr:hover td {
+      background: #1a1a3a;
+    }
+    .node-table tr.selected td {
+      background: #0f3460;
+    }
+
+    /* Status badges */
+    .status-badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 3px;
+      font-size: 0.75rem;
+      font-weight: bold;
+      text-transform: uppercase;
+    }
+    .status-online { background: #1a3a2a; color: #4ade80; }
+    .status-offline { background: #3a1a1a; color: #f87171; }
+    .status-unknown { background: #2a2a2a; color: #888; }
+
+    /* MAC address styling */
+    .mac { font-family: 'SF Mono', 'Fira Code', monospace; color: #ffd700; font-size: 0.8rem; }
+
+    /* Right panel: form */
+    .form-panel {
+      background: #111122;
+      border-left: 2px solid #0f3460;
+      padding: 20px;
+      overflow-y: auto;
+    }
+
+    .form-panel h2 {
+      font-size: 1rem;
+      margin-bottom: 16px;
+      color: #00d4ff;
+      padding-bottom: 8px;
+      border-bottom: 1px solid #2a2a4a;
+    }
+
+    .form-group {
+      margin-bottom: 14px;
+    }
+    .form-group label {
+      display: block;
+      font-size: 0.8rem;
+      color: #888;
+      margin-bottom: 4px;
+    }
+    .form-group input, .form-group select {
+      width: 100%;
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      color: #e0e0e0;
+      padding: 8px 10px;
+      border-radius: 4px;
+      font-family: inherit;
+      font-size: 0.85rem;
+    }
+    .form-group input:focus, .form-group select:focus {
+      outline: none;
+      border-color: #00d4ff;
+    }
+    .form-group input.readonly {
+      background: #0a0a1a;
+      color: #666;
+      cursor: not-allowed;
+    }
+
+    .form-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 20px;
+    }
+
+    /* Empty state */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #555;
+    }
+    .empty-state .icon { font-size: 3rem; margin-bottom: 12px; }
+    .empty-state p { font-size: 0.9rem; margin-bottom: 8px; }
+
+    /* Toast notifications */
+    .toast-container {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .toast {
+      padding: 10px 16px;
+      border-radius: 4px;
+      font-size: 0.85rem;
+      font-family: inherit;
+      animation: slideIn 0.3s ease-out, fadeOut 0.5s ease-in 2.5s forwards;
+      max-width: 320px;
+    }
+    .toast-success { background: #1a3a2a; color: #4ade80; border-left: 3px solid #4ade80; }
+    .toast-error { background: #3a1a1a; color: #f87171; border-left: 3px solid #f87171; }
+    .toast-info { background: #1a2a3a; color: #00d4ff; border-left: 3px solid #00d4ff; }
+
+    @keyframes slideIn { from { transform: translateX(100%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+    @keyframes fadeOut { to { opacity: 0; transform: translateY(-10px); } }
+
+    /* Responsive: stack panels on small screens */
+    @media (max-width: 900px) {
+      .container { grid-template-columns: 1fr; }
+      .form-panel { border-left: none; border-top: 2px solid #0f3460; }
+    }
+
+    /* Confirm dialog overlay */
+    .overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.7);
+      z-index: 500;
+      align-items: center;
+      justify-content: center;
+    }
+    .overlay.active { display: flex; }
+    .dialog {
+      background: #1a1a2e;
+      border: 1px solid #2a2a4a;
+      border-radius: 8px;
+      padding: 24px;
+      max-width: 400px;
+      width: 90%;
+    }
+    .dialog h3 { margin-bottom: 12px; color: #e94560; }
+    .dialog p { margin-bottom: 20px; font-size: 0.9rem; color: #ccc; }
+    .dialog .actions { display: flex; gap: 8px; justify-content: flex-end; }
+
+    /* Last-seen relative time styling */
+    .time-ago { color: #888; font-size: 0.8rem; }
+    .time-ago.recent { color: #4ade80; }
+    .time-ago.stale { color: #fbbf24; }
+    .time-ago.old { color: #f87171; }
+  </style>
+</head>
+<body>
+
+  <header>
+    <h1>Node Administration</h1>
+    <div class="header-right">
+      <span class="node-count" id="nodeCount">0 nodes</span>
+      <button class="btn btn-primary" onclick="showAddForm()">+ Add Node</button>
+    </div>
+  </header>
+
+  <div class="container">
+    <!-- Left panel: node list table -->
+    <div class="table-panel">
+      <div class="toolbar">
+        <input type="text" id="searchInput" placeholder="Filter by name or MAC..." oninput="filterNodes()">
+        <select id="statusFilter" onchange="filterNodes()">
+          <option value="">All statuses</option>
+          <option value="online">Online</option>
+          <option value="offline">Offline</option>
+        </select>
+        <button class="btn btn-secondary" onclick="refreshNodes()">Refresh</button>
+      </div>
+
+      <div id="nodeTableContainer">
+        <!-- Populated by JS -->
+      </div>
+    </div>
+
+    <!-- Right panel: add/edit form -->
+    <div class="form-panel">
+      <h2 id="formTitle">Add Node</h2>
+
+      <form id="nodeForm" onsubmit="handleSubmit(event)">
+        <input type="hidden" id="editId" value="">
+
+        <div class="form-group">
+          <label for="macInput">MAC Address *</label>
+          <input type="text" id="macInput" placeholder="aa:bb:cc:dd:ee:ff" required
+                 pattern="^([0-9a-fA-F]{2}:){5}[0-9a-fA-F]{2}$"
+                 title="Format: xx:xx:xx:xx:xx:xx">
+        </div>
+
+        <div class="form-group">
+          <label for="nameInput">Node Name</label>
+          <input type="text" id="nameInput" placeholder="e.g., Node Alpha, Room 101 Left">
+        </div>
+
+        <div class="form-group">
+          <label for="ipInput">IP Address</label>
+          <input type="text" id="ipInput" placeholder="e.g., 192.168.1.101">
+        </div>
+
+        <div class="form-group">
+          <label for="typeInput">Node Type</label>
+          <select id="typeInput">
+            <option value="esp32-s3">ESP32-S3</option>
+            <option value="esp32-c3">ESP32-C3</option>
+            <option value="esp32">ESP32</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="firmwareInput">Firmware Version</label>
+          <input type="text" id="firmwareInput" placeholder="e.g., 1.0.0">
+        </div>
+
+        <div class="form-group">
+          <label for="posXInput">Position X (0-1 normalized)</label>
+          <input type="number" id="posXInput" min="0" max="1" step="0.01" placeholder="0.0">
+        </div>
+
+        <div class="form-group">
+          <label for="posYInput">Position Y (0-1 normalized)</label>
+          <input type="number" id="posYInput" min="0" max="1" step="0.01" placeholder="0.0">
+        </div>
+
+        <div class="form-group" id="statusGroup" style="display: none;">
+          <label for="statusInput">Status</label>
+          <select id="statusInput">
+            <option value="offline">Offline</option>
+            <option value="online">Online</option>
+          </select>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-success" id="submitBtn">Register Node</button>
+          <button type="button" class="btn btn-secondary" onclick="resetForm()">Cancel</button>
+          <button type="button" class="btn btn-danger" id="deleteBtn" style="display: none;"
+                  onclick="confirmDelete()">Delete</button>
+        </div>
+      </form>
+
+      <!-- Node detail section (shown when editing) -->
+      <div id="nodeDetail" style="display: none; margin-top: 20px; padding-top: 16px; border-top: 1px solid #2a2a4a;">
+        <h2 style="color: #ffd700;">Node Details</h2>
+        <div id="detailContent" style="font-size: 0.85rem; margin-top: 12px;"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Delete confirmation dialog -->
+  <div class="overlay" id="deleteOverlay">
+    <div class="dialog">
+      <h3>Delete Node?</h3>
+      <p id="deleteMsg">Are you sure you want to remove this node? This cannot be undone.</p>
+      <div class="actions">
+        <button class="btn btn-secondary" onclick="hideDeleteDialog()">Cancel</button>
+        <button class="btn btn-danger" onclick="executeDelete()">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast container -->
+  <div class="toast-container" id="toastContainer"></div>
+
+  <script>
+    // =========================================================================
+    // HeartBeatz Node Admin UI — Client-side Logic
+    // =========================================================================
+    // Communicates with /api/v1/nodes CRUD endpoints.
+    // =========================================================================
+
+    const API_BASE = '/api/v1/nodes';
+
+    /** @type {Array<Object>} All nodes fetched from the API */
+    let allNodes = [];
+
+    /** @type {string|null} Currently selected node ID for editing */
+    let selectedNodeId = null;
+
+    // -------------------------------------------------------------------------
+    // API Helpers
+    // -------------------------------------------------------------------------
+
+    /**
+     * Fetch all nodes from the API.
+     * @param {Object} [filters] - Optional { status, type } filters
+     * @returns {Promise<Object[]>} Array of node objects
+     */
+    async function fetchNodes(filters = {}) {
+      const params = new URLSearchParams();
+      if (filters.status) params.set('status', filters.status);
+      if (filters.type) params.set('type', filters.type);
+
+      const url = params.toString() ? `${API_BASE}?${params}` : API_BASE;
+      const res = await fetch(url);
+      const json = await res.json();
+
+      if (!json.ok) throw new Error(json.error || 'Failed to fetch nodes');
+      return json.data;
+    }
+
+    /**
+     * Create a new node via the API.
+     * @param {Object} data - Node data: { mac, name, ip, type, firmware_ver, position_x, position_y }
+     * @returns {Promise<Object>} Created node
+     */
+    async function createNode(data) {
+      const res = await fetch(API_BASE, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Failed to create node');
+      return json.data;
+    }
+
+    /**
+     * Update an existing node via the API.
+     * @param {string} id - Node ID
+     * @param {Object} data - Fields to update
+     * @returns {Promise<Object>} Updated node
+     */
+    async function updateNode(id, data) {
+      const res = await fetch(`${API_BASE}/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(data),
+      });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Failed to update node');
+      return json.data;
+    }
+
+    /**
+     * Delete a node via the API.
+     * @param {string} id - Node ID
+     * @returns {Promise<void>}
+     */
+    async function deleteNode(id) {
+      const res = await fetch(`${API_BASE}/${id}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (!json.ok) throw new Error(json.error || 'Failed to delete node');
+    }
+
+    // -------------------------------------------------------------------------
+    // Rendering
+    // -------------------------------------------------------------------------
+
+    /**
+     * Render the node table into the container.
+     * @param {Object[]} nodes - Array of node objects to display
+     */
+    function renderNodeTable(nodes) {
+      const container = document.getElementById('nodeTableContainer');
+      const countEl = document.getElementById('nodeCount');
+      countEl.textContent = `${allNodes.length} node${allNodes.length !== 1 ? 's' : ''}`;
+
+      if (nodes.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <div class="icon">📡</div>
+            <p>No nodes registered</p>
+            <p>Click "+ Add Node" to register an ESP32 sensor node</p>
+          </div>
+        `;
+        return;
+      }
+
+      let html = `
+        <table class="node-table">
+          <thead>
+            <tr>
+              <th>Status</th>
+              <th>Name</th>
+              <th>MAC</th>
+              <th>IP</th>
+              <th>Type</th>
+              <th>Firmware</th>
+              <th>Last Seen</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+      `;
+
+      for (const node of nodes) {
+        const statusClass = node.status === 'online' ? 'status-online'
+          : node.status === 'offline' ? 'status-offline' : 'status-unknown';
+        const timeAgo = formatTimeAgo(node.last_seen);
+        const isSelected = node.id === selectedNodeId;
+
+        html += `
+          <tr class="${isSelected ? 'selected' : ''}" onclick="selectNode('${node.id}')">
+            <td><span class="status-badge ${statusClass}">${node.status}</span></td>
+            <td><strong>${escapeHtml(node.name)}</strong></td>
+            <td><span class="mac">${escapeHtml(node.mac)}</span></td>
+            <td>${node.ip ? escapeHtml(node.ip) : '<span style="color:#555">—</span>'}</td>
+            <td>${escapeHtml(node.type)}</td>
+            <td>${node.firmware_ver ? escapeHtml(node.firmware_ver) : '<span style="color:#555">—</span>'}</td>
+            <td><span class="time-ago ${timeAgo.cls}">${timeAgo.text}</span></td>
+            <td>
+              <button class="btn btn-secondary btn-sm" onclick="event.stopPropagation(); selectNode('${node.id}')">Edit</button>
+            </td>
+          </tr>
+        `;
+      }
+
+      html += '</tbody></table>';
+      container.innerHTML = html;
+    }
+
+    /**
+     * Format a timestamp into a human-readable relative time string.
+     * @param {string|null} isoDate - ISO 8601 date string or null
+     * @returns {{ text: string, cls: string }} Display text and CSS class
+     */
+    function formatTimeAgo(isoDate) {
+      if (!isoDate) return { text: 'Never', cls: 'old' };
+
+      const now = Date.now();
+      const then = new Date(isoDate + 'Z').getTime(); // Assume UTC
+      const diffMs = now - then;
+      const diffSec = Math.floor(diffMs / 1000);
+      const diffMin = Math.floor(diffSec / 60);
+      const diffHour = Math.floor(diffMin / 60);
+      const diffDay = Math.floor(diffHour / 24);
+
+      let text, cls;
+      if (diffSec < 60) { text = `${diffSec}s ago`; cls = 'recent'; }
+      else if (diffMin < 60) { text = `${diffMin}m ago`; cls = diffMin < 5 ? 'recent' : 'stale'; }
+      else if (diffHour < 24) { text = `${diffHour}h ago`; cls = 'stale'; }
+      else { text = `${diffDay}d ago`; cls = 'old'; }
+
+      return { text, cls };
+    }
+
+    /**
+     * Escape HTML to prevent XSS in rendered content.
+     * @param {string} str - Input string
+     * @returns {string} Escaped string
+     */
+    function escapeHtml(str) {
+      if (!str) return '';
+      const div = document.createElement('div');
+      div.textContent = str;
+      return div.innerHTML;
+    }
+
+    // -------------------------------------------------------------------------
+    // Node Selection & Form Management
+    // -------------------------------------------------------------------------
+
+    /**
+     * Select a node for editing: populate the form with its current values.
+     * @param {string} id - Node ID
+     */
+    function selectNode(id) {
+      const node = allNodes.find(n => n.id === id);
+      if (!node) return;
+
+      selectedNodeId = id;
+
+      // Update form
+      document.getElementById('formTitle').textContent = 'Edit Node';
+      document.getElementById('editId').value = id;
+      document.getElementById('macInput').value = node.mac;
+      document.getElementById('macInput').classList.add('readonly');
+      document.getElementById('macInput').readOnly = true;
+      document.getElementById('nameInput').value = node.name || '';
+      document.getElementById('ipInput').value = node.ip || '';
+      document.getElementById('typeInput').value = node.type || 'esp32-s3';
+      document.getElementById('firmwareInput').value = node.firmware_ver || '';
+      document.getElementById('posXInput').value = node.position_x ?? '';
+      document.getElementById('posYInput').value = node.position_y ?? '';
+      document.getElementById('statusInput').value = node.status || 'offline';
+      document.getElementById('statusGroup').style.display = 'block';
+      document.getElementById('submitBtn').textContent = 'Update Node';
+      document.getElementById('deleteBtn').style.display = 'inline-block';
+
+      // Show detail section
+      renderNodeDetail(node);
+
+      // Re-render table to show selection highlight
+      filterNodes();
+    }
+
+    /**
+     * Render the node detail section with readonly metadata.
+     * @param {Object} node - Node object
+     */
+    function renderNodeDetail(node) {
+      const detail = document.getElementById('nodeDetail');
+      detail.style.display = 'block';
+
+      const detailHtml = `
+        <div style="display: grid; grid-template-columns: auto 1fr; gap: 4px 12px;">
+          <span style="color: #888;">ID:</span>
+          <span style="word-break: break-all; color: #ffd700; font-size: 0.75rem;">${escapeHtml(node.id)}</span>
+          <span style="color: #888;">Created:</span>
+          <span>${node.created_at || '—'}</span>
+          <span style="color: #888;">Updated:</span>
+          <span>${node.updated_at || '—'}</span>
+          <span style="color: #888;">Last Seen:</span>
+          <span class="time-ago ${formatTimeAgo(node.last_seen).cls}">${formatTimeAgo(node.last_seen).text}</span>
+          <span style="color: #888;">Position:</span>
+          <span>${node.position_x != null ? `(${node.position_x}, ${node.position_y})` : 'Not set'}</span>
+        </div>
+      `;
+      document.getElementById('detailContent').innerHTML = detailHtml;
+    }
+
+    /** Show the form in "Add" mode with empty fields. */
+    function showAddForm() {
+      resetForm();
+      document.getElementById('nameInput').focus();
+    }
+
+    /** Reset the form to "Add" mode. */
+    function resetForm() {
+      selectedNodeId = null;
+      document.getElementById('formTitle').textContent = 'Add Node';
+      document.getElementById('editId').value = '';
+      document.getElementById('nodeForm').reset();
+      document.getElementById('macInput').classList.remove('readonly');
+      document.getElementById('macInput').readOnly = false;
+      document.getElementById('statusGroup').style.display = 'none';
+      document.getElementById('submitBtn').textContent = 'Register Node';
+      document.getElementById('deleteBtn').style.display = 'none';
+      document.getElementById('nodeDetail').style.display = 'none';
+      filterNodes(); // Clear selection highlight
+    }
+
+    // -------------------------------------------------------------------------
+    // Form Submission
+    // -------------------------------------------------------------------------
+
+    /**
+     * Handle form submit: create or update a node.
+     * @param {Event} event - Form submit event
+     */
+    async function handleSubmit(event) {
+      event.preventDefault();
+
+      const editId = document.getElementById('editId').value;
+      const mac = document.getElementById('macInput').value.trim().toLowerCase();
+      const name = document.getElementById('nameInput').value.trim() || undefined;
+      const ip = document.getElementById('ipInput').value.trim() || undefined;
+      const type = document.getElementById('typeInput').value;
+      const firmware_ver = document.getElementById('firmwareInput').value.trim() || undefined;
+      const posX = document.getElementById('posXInput').value;
+      const posY = document.getElementById('posYInput').value;
+      const position_x = posX !== '' ? parseFloat(posX) : undefined;
+      const position_y = posY !== '' ? parseFloat(posY) : undefined;
+
+      try {
+        if (editId) {
+          // Update existing node
+          const data = {};
+          if (name !== undefined) data.name = name;
+          if (ip !== undefined) data.ip = ip;
+          if (type) data.type = type;
+          if (firmware_ver !== undefined) data.firmware_ver = firmware_ver;
+          if (position_x !== undefined) data.position_x = position_x;
+          if (position_y !== undefined) data.position_y = position_y;
+          data.status = document.getElementById('statusInput').value;
+
+          await updateNode(editId, data);
+          showToast(`Node updated: ${name || mac}`, 'success');
+        } else {
+          // Create new node
+          const data = { mac };
+          if (name) data.name = name;
+          if (ip) data.ip = ip;
+          if (type) data.type = type;
+          if (firmware_ver) data.firmware_ver = firmware_ver;
+          if (position_x !== undefined) data.position_x = position_x;
+          if (position_y !== undefined) data.position_y = position_y;
+
+          await createNode(data);
+          showToast(`Node registered: ${data.name || document.getElementById('macInput').value}`, 'success');
+        }
+
+        resetForm();
+        await refreshNodes();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Delete
+    // -------------------------------------------------------------------------
+
+    /** Show the delete confirmation dialog. */
+    function confirmDelete() {
+      if (!selectedNodeId) return;
+      const node = allNodes.find(n => n.id === selectedNodeId);
+      if (!node) return;
+
+      document.getElementById('deleteMsg').textContent =
+        `Are you sure you want to delete "${node.name}" (${node.mac})? This cannot be undone.`;
+      document.getElementById('deleteOverlay').classList.add('active');
+    }
+
+    /** Hide the delete confirmation dialog. */
+    function hideDeleteDialog() {
+      document.getElementById('deleteOverlay').classList.remove('active');
+    }
+
+    /** Execute the delete after confirmation. */
+    async function executeDelete() {
+      hideDeleteDialog();
+      if (!selectedNodeId) return;
+
+      const node = allNodes.find(n => n.id === selectedNodeId);
+      try {
+        await deleteNode(selectedNodeId);
+        showToast(`Node deleted: ${node?.name || selectedNodeId}`, 'info');
+        resetForm();
+        await refreshNodes();
+      } catch (err) {
+        showToast(err.message, 'error');
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Filtering & Search
+    // -------------------------------------------------------------------------
+
+    /** Apply client-side filters to the node list and re-render. */
+    function filterNodes() {
+      const search = document.getElementById('searchInput').value.toLowerCase();
+      const statusFilter = document.getElementById('statusFilter').value;
+
+      let filtered = allNodes;
+
+      if (statusFilter) {
+        filtered = filtered.filter(n => n.status === statusFilter);
+      }
+
+      if (search) {
+        filtered = filtered.filter(n =>
+          (n.name || '').toLowerCase().includes(search) ||
+          (n.mac || '').toLowerCase().includes(search) ||
+          (n.ip || '').toLowerCase().includes(search)
+        );
+      }
+
+      renderNodeTable(filtered);
+    }
+
+    // -------------------------------------------------------------------------
+    // Data Refresh
+    // -------------------------------------------------------------------------
+
+    /**
+     * Fetch fresh node data from the API and re-render.
+     * Called on page load and after mutations.
+     */
+    async function refreshNodes() {
+      try {
+        allNodes = await fetchNodes();
+        filterNodes();
+      } catch (err) {
+        showToast(`Failed to load nodes: ${err.message}`, 'error');
+        renderNodeTable([]);
+      }
+    }
+
+    // -------------------------------------------------------------------------
+    // Toast Notifications
+    // -------------------------------------------------------------------------
+
+    /**
+     * Show a brief toast notification.
+     * @param {string} message - Notification text
+     * @param {'success'|'error'|'info'} type - Toast style
+     */
+    function showToast(message, type = 'info') {
+      const container = document.getElementById('toastContainer');
+      const toast = document.createElement('div');
+      toast.className = `toast toast-${type}`;
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      // Auto-remove after animation completes
+      setTimeout(() => {
+        if (toast.parentNode) toast.parentNode.removeChild(toast);
+      }, 3200);
+    }
+
+    // -------------------------------------------------------------------------
+    // Keyboard Shortcuts
+    // -------------------------------------------------------------------------
+
+    document.addEventListener('keydown', (e) => {
+      // Don't intercept when typing in form fields
+      if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        showAddForm();
+      } else if (e.key === 'r' || e.key === 'R') {
+        e.preventDefault();
+        refreshNodes();
+      } else if (e.key === 'Escape') {
+        if (document.getElementById('deleteOverlay').classList.contains('active')) {
+          hideDeleteDialog();
+        } else {
+          resetForm();
+        }
+      }
+    });
+
+    // -------------------------------------------------------------------------
+    // Auto-refresh: poll every 30 seconds for status updates
+    // -------------------------------------------------------------------------
+
+    setInterval(refreshNodes, 30000);
+
+    // -------------------------------------------------------------------------
+    // Initialize on page load
+    // -------------------------------------------------------------------------
+
+    refreshNodes();
+  </script>
+</body>
+</html>

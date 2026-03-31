@@ -1,0 +1,618 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>HeartBeatz — CSI Dev Heatmap</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      background: #0a0a1a;
+      color: #e0e0e0;
+      overflow-x: hidden;
+    }
+    .header {
+      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      border-bottom: 1px solid #2a2a4a;
+    }
+    .header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      color: #00d4ff;
+    }
+    .header .status {
+      font-size: 13px;
+      padding: 4px 12px;
+      border-radius: 12px;
+      background: #1a3a2a;
+      color: #4ade80;
+    }
+    .header .status.disconnected {
+      background: #3a1a1a;
+      color: #f87171;
+    }
+    .controls {
+      background: #111122;
+      padding: 12px 24px;
+      display: flex;
+      gap: 16px;
+      align-items: center;
+      border-bottom: 1px solid #1a1a3a;
+      flex-wrap: wrap;
+    }
+    .controls label {
+      font-size: 12px;
+      color: #888;
+    }
+    .controls select, .controls input {
+      background: #1a1a2e;
+      color: #e0e0e0;
+      border: 1px solid #2a2a4a;
+      padding: 4px 8px;
+      border-radius: 4px;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    .controls button {
+      background: #00d4ff22;
+      color: #00d4ff;
+      border: 1px solid #00d4ff44;
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 12px;
+      font-family: inherit;
+    }
+    .controls button:hover { background: #00d4ff33; }
+
+    .dashboard {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      padding: 16px 24px;
+    }
+
+    .node-panel {
+      background: #111122;
+      border: 1px solid #1a1a3a;
+      border-radius: 8px;
+      overflow: hidden;
+    }
+    .node-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 12px 16px;
+      background: #1a1a2e;
+      border-bottom: 1px solid #1a1a3a;
+    }
+    .node-header .mac {
+      font-size: 14px;
+      font-weight: 600;
+      color: #00d4ff;
+    }
+    .node-header .metrics {
+      display: flex;
+      gap: 16px;
+      font-size: 12px;
+    }
+    .metric {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .metric .value {
+      font-size: 16px;
+      font-weight: 700;
+    }
+    .metric .label {
+      font-size: 10px;
+      color: #666;
+      text-transform: uppercase;
+    }
+    .metric .value.persons { color: #4ade80; }
+    .metric .value.variance { color: #f59e0b; }
+    .metric .value.baseline { color: #8b5cf6; }
+    .metric .value.hr { color: #ef4444; }
+    .metric .value.br { color: #06b6d4; }
+
+    .heatmap-container {
+      padding: 8px 16px 16px;
+    }
+    .heatmap-label {
+      font-size: 11px;
+      color: #666;
+      margin-bottom: 4px;
+    }
+    canvas.heatmap {
+      width: 100%;
+      height: 120px;
+      border-radius: 4px;
+      background: #0a0a14;
+    }
+    canvas.variance-chart {
+      width: 100%;
+      height: 80px;
+      border-radius: 4px;
+      background: #0a0a14;
+      margin-top: 8px;
+    }
+    canvas.subcarrier-bar {
+      width: 100%;
+      height: 60px;
+      border-radius: 4px;
+      background: #0a0a14;
+      margin-top: 8px;
+    }
+
+    .legend {
+      display: flex;
+      gap: 12px;
+      padding: 8px 16px;
+      font-size: 11px;
+      color: #888;
+      align-items: center;
+    }
+    .legend-item {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+    }
+    .legend-swatch {
+      width: 12px;
+      height: 12px;
+      border-radius: 2px;
+    }
+
+    .info-bar {
+      background: #111122;
+      border-top: 1px solid #1a1a3a;
+      padding: 8px 24px;
+      font-size: 11px;
+      color: #555;
+      text-align: center;
+      position: fixed;
+      bottom: 0;
+      width: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>CSI Dev Heatmap</h1>
+    <div class="status disconnected" id="connectionStatus">Connecting...</div>
+  </div>
+
+  <div class="controls">
+    <div>
+      <label>Bridge URL</label><br>
+      <input type="text" id="bridgeUrl" value="" placeholder="http://10.0.0.51:3000" style="width: 200px">
+    </div>
+    <div>
+      <label>Color Scale</label><br>
+      <select id="colorScale">
+        <option value="viridis">Viridis</option>
+        <option value="plasma">Plasma</option>
+        <option value="thermal">Thermal</option>
+      </select>
+    </div>
+    <div>
+      <label>Amplitude Range</label><br>
+      <input type="number" id="ampMin" value="0" style="width: 50px"> —
+      <input type="number" id="ampMax" value="30" style="width: 50px">
+    </div>
+    <button onclick="connect()">Connect</button>
+    <button onclick="triggerRecalibrate()">Recalibrate All</button>
+  </div>
+
+  <div class="dashboard" id="dashboard">
+    <p style="text-align:center; color: #555; padding: 40px;">
+      Enter the CSI bridge URL and click Connect.<br>
+      Default: <code>http://10.0.0.51:3000</code> (MeLE on local network)
+    </p>
+  </div>
+
+  <div class="info-bar">
+    HeartBeatz CSI Dev Heatmap v3 — Real-time per-subcarrier WiFi Channel State Information visualization
+  </div>
+
+  <script>
+    // =========================================================================
+    // State
+    // =========================================================================
+    let eventSource = null;
+    let nodeCanvases = {};  // mac -> { heatmap, varianceChart, subcarrierBar }
+    let nodeHistory = {};   // mac -> { heatmapData: [...], varianceData: [...] }
+    const HEATMAP_FRAMES = 200;  // Time axis: how many frames to show
+    const VARIANCE_HISTORY = 150; // Variance chart time axis
+
+    // =========================================================================
+    // Color Scales
+    // =========================================================================
+    const colorScales = {
+      viridis: (t) => {
+        // Simplified viridis: dark purple → teal → yellow
+        const r = Math.round(68 + t * (253 - 68));
+        const g = Math.round(1 + t * (231 - 1));
+        const b = Math.round(84 + t * (37 - 84));
+        return [
+          Math.max(0, Math.min(255, Math.round(68*(1-t)*(1-t) + 49*2*t*(1-t) + 253*t*t))),
+          Math.max(0, Math.min(255, Math.round(1*(1-t)*(1-t) + 200*2*t*(1-t) + 231*t*t))),
+          Math.max(0, Math.min(255, Math.round(84*(1-t)*(1-t) + 136*2*t*(1-t) + 37*t*t)))
+        ];
+      },
+      plasma: (t) => {
+        return [
+          Math.max(0, Math.min(255, Math.round(13*(1-t)*(1-t) + 225*2*t*(1-t) + 240*t*t))),
+          Math.max(0, Math.min(255, Math.round(8*(1-t)*(1-t) + 30*2*t*(1-t) + 249*t*t))),
+          Math.max(0, Math.min(255, Math.round(135*(1-t)*(1-t) + 80*2*t*(1-t) + 33*t*t)))
+        ];
+      },
+      thermal: (t) => {
+        // Black → red → yellow → white
+        if (t < 0.33) {
+          const s = t / 0.33;
+          return [Math.round(s * 200), 0, Math.round(s * 40)];
+        } else if (t < 0.66) {
+          const s = (t - 0.33) / 0.33;
+          return [200 + Math.round(s * 55), Math.round(s * 200), Math.round(40 - s * 40)];
+        } else {
+          const s = (t - 0.66) / 0.34;
+          return [255, 200 + Math.round(s * 55), Math.round(s * 255)];
+        }
+      }
+    };
+
+    function getColor(value, min, max) {
+      const scale = document.getElementById('colorScale').value;
+      const t = Math.max(0, Math.min(1, (value - min) / (max - min)));
+      return colorScales[scale](t);
+    }
+
+    // =========================================================================
+    // Connection
+    // =========================================================================
+    function connect() {
+      if (eventSource) {
+        eventSource.close();
+        eventSource = null;
+      }
+
+      let url = document.getElementById('bridgeUrl').value.trim();
+      if (!url) {
+        // Auto-detect: try current page origin, or default to MeLE
+        url = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1'
+          ? 'http://10.0.0.51:3000'
+          : window.location.origin.replace(/:\d+$/, ':3000');
+        document.getElementById('bridgeUrl').value = url;
+      }
+
+      const statusEl = document.getElementById('connectionStatus');
+      statusEl.textContent = 'Connecting...';
+      statusEl.className = 'status disconnected';
+
+      const streamUrl = url + '/api/heatmap/stream';
+      eventSource = new EventSource(streamUrl);
+
+      eventSource.onopen = () => {
+        statusEl.textContent = 'Connected';
+        statusEl.className = 'status';
+      };
+
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          updateDashboard(data);
+        } catch (e) {
+          console.error('Parse error:', e);
+        }
+      };
+
+      eventSource.onerror = () => {
+        statusEl.textContent = 'Disconnected';
+        statusEl.className = 'status disconnected';
+      };
+    }
+
+    // =========================================================================
+    // Recalibrate
+    // =========================================================================
+    function triggerRecalibrate() {
+      const url = document.getElementById('bridgeUrl').value.trim();
+      if (!url) return;
+      fetch(url + '/api/calibrate').then(r => r.json()).then(d => {
+        console.log('Recalibrate response:', d);
+        alert('Recalibration triggered: ' + d.message);
+      }).catch(e => console.error('Recalibrate failed:', e));
+    }
+
+    // =========================================================================
+    // Dashboard Update
+    // =========================================================================
+    function updateDashboard(data) {
+      const dashboard = document.getElementById('dashboard');
+      const existingMacs = new Set(Object.keys(nodeCanvases));
+
+      for (const node of data.nodes) {
+        if (!nodeCanvases[node.mac]) {
+          // Create new node panel
+          createNodePanel(dashboard, node.mac);
+          existingMacs.delete(node.mac);
+        } else {
+          existingMacs.delete(node.mac);
+        }
+
+        // Initialize history if needed
+        if (!nodeHistory[node.mac]) {
+          nodeHistory[node.mac] = {
+            heatmapData: [],
+            varianceData: [],
+            baselineData: [],
+          };
+        }
+
+        const hist = nodeHistory[node.mac];
+
+        // Push new heatmap frame
+        if (node.currentAmps && node.currentAmps.length > 0) {
+          hist.heatmapData.push(node.currentAmps);
+          if (hist.heatmapData.length > HEATMAP_FRAMES) hist.heatmapData.shift();
+        }
+
+        // Push variance data
+        hist.varianceData.push({
+          t: data.t,
+          blended: node.blendedVar || 0,
+          effective: node.effectiveVar || 0,
+          baseline: node.baselineVariance || 0,
+        });
+        if (hist.varianceData.length > VARIANCE_HISTORY) hist.varianceData.shift();
+
+        // Update metrics
+        updateNodeMetrics(node);
+
+        // Render canvases
+        renderHeatmap(node.mac);
+        renderVarianceChart(node.mac);
+        renderSubcarrierBar(node.mac, node.currentAmps || []);
+      }
+    }
+
+    // =========================================================================
+    // DOM Creation
+    // =========================================================================
+    function createNodePanel(parent, mac) {
+      // Remove placeholder text if present
+      if (!Object.keys(nodeCanvases).length) {
+        parent.innerHTML = '';
+      }
+
+      const panel = document.createElement('div');
+      panel.className = 'node-panel';
+      panel.id = `panel-${mac.replace(/:/g, '')}`;
+      panel.innerHTML = `
+        <div class="node-header">
+          <span class="mac">Node ${mac.slice(-5)} (${mac})</span>
+          <div class="metrics">
+            <div class="metric"><span class="value persons" id="m-persons-${mac.replace(/:/g,'')}">0</span><span class="label">Persons</span></div>
+            <div class="metric"><span class="value variance" id="m-ema-${mac.replace(/:/g,'')}">0.00</span><span class="label">EMA</span></div>
+            <div class="metric"><span class="value variance" id="m-bvar-${mac.replace(/:/g,'')}">0.00</span><span class="label">BlendVar</span></div>
+            <div class="metric"><span class="value baseline" id="m-base-${mac.replace(/:/g,'')}">0.00</span><span class="label">Baseline</span></div>
+            <div class="metric"><span class="value hr" id="m-hr-${mac.replace(/:/g,'')}">0</span><span class="label">HR</span></div>
+            <div class="metric"><span class="value br" id="m-br-${mac.replace(/:/g,'')}">0</span><span class="label">BR</span></div>
+            <div class="metric"><span class="value" id="m-motion-${mac.replace(/:/g,'')}" style="color:#888">none</span><span class="label">Motion</span></div>
+          </div>
+        </div>
+        <div class="heatmap-container">
+          <div class="heatmap-label">Per-Subcarrier Amplitude (time → right, subcarrier → down)</div>
+          <canvas class="heatmap" id="hm-${mac.replace(/:/g,'')}"></canvas>
+          <div class="heatmap-label" style="margin-top:8px">Variance Tracking (blended=amber, effective=green, baseline=purple)</div>
+          <canvas class="variance-chart" id="vc-${mac.replace(/:/g,'')}"></canvas>
+          <div class="heatmap-label" style="margin-top:8px">Current Subcarrier Amplitudes</div>
+          <canvas class="subcarrier-bar" id="sb-${mac.replace(/:/g,'')}"></canvas>
+        </div>
+      `;
+      parent.appendChild(panel);
+
+      const key = mac.replace(/:/g, '');
+      nodeCanvases[mac] = {
+        heatmap: document.getElementById(`hm-${key}`),
+        varianceChart: document.getElementById(`vc-${key}`),
+        subcarrierBar: document.getElementById(`sb-${key}`),
+      };
+    }
+
+    function updateNodeMetrics(node) {
+      const key = node.mac.replace(/:/g, '');
+      const el = (id) => document.getElementById(id);
+      const v = el(`m-persons-${key}`);
+      if (v) v.textContent = node.personCount;
+      const ema = el(`m-ema-${key}`);
+      if (ema) ema.textContent = (node.emaPersonCount || 0).toFixed(2);
+      const bv = el(`m-bvar-${key}`);
+      if (bv) bv.textContent = (node.blendedVar || 0).toFixed(3);
+      const base = el(`m-base-${key}`);
+      if (base) base.textContent = (node.baselineVariance || 0).toFixed(3);
+      const hr = el(`m-hr-${key}`);
+      if (hr) hr.textContent = node.heartRate || 0;
+      const br = el(`m-br-${key}`);
+      if (br) br.textContent = node.breathingRate || 0;
+      const mot = el(`m-motion-${key}`);
+      if (mot) {
+        mot.textContent = node.motionState || 'none';
+        mot.style.color = node.motionState === 'moving' ? '#f59e0b'
+                        : node.motionState === 'stationary' ? '#06b6d4' : '#555';
+      }
+    }
+
+    // =========================================================================
+    // Rendering
+    // =========================================================================
+    function renderHeatmap(mac) {
+      const canvases = nodeCanvases[mac];
+      const hist = nodeHistory[mac];
+      if (!canvases || !hist || hist.heatmapData.length === 0) return;
+
+      const canvas = canvases.heatmap;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * (window.devicePixelRatio || 1);
+      canvas.height = rect.height * (window.devicePixelRatio || 1);
+      const ctx = canvas.getContext('2d');
+
+      const frames = hist.heatmapData;
+      const nFrames = frames.length;
+      const nSubs = frames[0]?.length || 0;
+      if (nSubs === 0) return;
+
+      const ampMin = parseFloat(document.getElementById('ampMin').value) || 0;
+      const ampMax = parseFloat(document.getElementById('ampMax').value) || 30;
+
+      const cellW = canvas.width / HEATMAP_FRAMES;
+      const cellH = canvas.height / nSubs;
+
+      // Clear
+      ctx.fillStyle = '#0a0a14';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Draw heatmap (newest frame on the right)
+      const startX = (HEATMAP_FRAMES - nFrames) * cellW;
+      for (let f = 0; f < nFrames; f++) {
+        const frame = frames[f];
+        const x = startX + f * cellW;
+        for (let s = 0; s < nSubs; s++) {
+          const amp = frame[s] || 0;
+          const [r, g, b] = getColor(amp, ampMin, ampMax);
+          ctx.fillStyle = `rgb(${r},${g},${b})`;
+          ctx.fillRect(x, s * cellH, cellW + 1, cellH + 1);
+        }
+      }
+
+      // Axis labels
+      ctx.fillStyle = '#666';
+      ctx.font = `${10 * (window.devicePixelRatio || 1)}px monospace`;
+      ctx.fillText('SC 0', 2, 12 * (window.devicePixelRatio || 1));
+      ctx.fillText(`SC ${nSubs - 1}`, 2, canvas.height - 4);
+    }
+
+    function renderVarianceChart(mac) {
+      const canvases = nodeCanvases[mac];
+      const hist = nodeHistory[mac];
+      if (!canvases || !hist || hist.varianceData.length < 2) return;
+
+      const canvas = canvases.varianceChart;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * (window.devicePixelRatio || 1);
+      canvas.height = rect.height * (window.devicePixelRatio || 1);
+      const ctx = canvas.getContext('2d');
+
+      const data = hist.varianceData;
+      const w = canvas.width;
+      const h = canvas.height;
+      const dpr = window.devicePixelRatio || 1;
+
+      // Clear
+      ctx.fillStyle = '#0a0a14';
+      ctx.fillRect(0, 0, w, h);
+
+      // Find Y-axis range
+      let maxY = 0;
+      for (const d of data) {
+        maxY = Math.max(maxY, d.blended, d.effective, d.baseline);
+      }
+      maxY = Math.max(1, maxY * 1.2);
+
+      // Draw baseline as horizontal band
+      if (data.length > 0) {
+        const baselineY = h - (data[data.length - 1].baseline / maxY) * h;
+        ctx.strokeStyle = '#8b5cf644';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.moveTo(0, baselineY);
+        ctx.lineTo(w, baselineY);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
+
+      // Helper to draw a line
+      function drawLine(key, color, lineWidth) {
+        ctx.strokeStyle = color;
+        ctx.lineWidth = lineWidth * dpr;
+        ctx.beginPath();
+        const stepX = w / (VARIANCE_HISTORY - 1);
+        const offset = VARIANCE_HISTORY - data.length;
+        for (let i = 0; i < data.length; i++) {
+          const x = (offset + i) * stepX;
+          const y = h - (data[i][key] / maxY) * h;
+          if (i === 0) ctx.moveTo(x, y);
+          else ctx.lineTo(x, y);
+        }
+        ctx.stroke();
+      }
+
+      drawLine('blended', '#f59e0b88', 1.5);
+      drawLine('effective', '#4ade80cc', 2);
+      drawLine('baseline', '#8b5cf6aa', 1);
+
+      // Y-axis label
+      ctx.fillStyle = '#555';
+      ctx.font = `${9 * dpr}px monospace`;
+      ctx.fillText(`max: ${maxY.toFixed(2)}`, 4, 12 * dpr);
+    }
+
+    function renderSubcarrierBar(mac, amps) {
+      const canvases = nodeCanvases[mac];
+      if (!canvases || amps.length === 0) return;
+
+      const canvas = canvases.subcarrierBar;
+      const rect = canvas.getBoundingClientRect();
+      canvas.width = rect.width * (window.devicePixelRatio || 1);
+      canvas.height = rect.height * (window.devicePixelRatio || 1);
+      const ctx = canvas.getContext('2d');
+
+      const w = canvas.width;
+      const h = canvas.height;
+      const dpr = window.devicePixelRatio || 1;
+      const ampMax = parseFloat(document.getElementById('ampMax').value) || 30;
+
+      // Clear
+      ctx.fillStyle = '#0a0a14';
+      ctx.fillRect(0, 0, w, h);
+
+      // Bar chart
+      const barW = w / amps.length;
+      for (let i = 0; i < amps.length; i++) {
+        const amp = amps[i] || 0;
+        const t = Math.min(1, amp / ampMax);
+        const barH = t * h;
+        const [r, g, b] = getColor(amp, 0, ampMax);
+        ctx.fillStyle = `rgb(${r},${g},${b})`;
+        ctx.fillRect(i * barW, h - barH, barW - 0.5, barH);
+      }
+
+      // Axis
+      ctx.fillStyle = '#555';
+      ctx.font = `${9 * dpr}px monospace`;
+      ctx.fillText(`${amps.length} subcarriers`, 4, 10 * dpr);
+      ctx.fillText(`max: ${Math.max(...amps).toFixed(1)}`, w - 70 * dpr, 10 * dpr);
+    }
+
+    // =========================================================================
+    // Auto-connect if URL params present
+    // =========================================================================
+    window.addEventListener('load', () => {
+      const params = new URLSearchParams(window.location.search);
+      const url = params.get('url');
+      if (url) {
+        document.getElementById('bridgeUrl').value = url;
+        connect();
+      }
+    });
+  </script>
+</body>
+</html>
