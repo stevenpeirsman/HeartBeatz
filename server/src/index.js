@@ -39,7 +39,16 @@ import { createApiRouter } from './routes/api.js';
 import { createOtaRouter } from './routes/ota.js';
 import { createApiV1Router } from './routes/api-v1.js';
 import { connectRadarToStore } from './routes/radar-sse.js';
-import { initDatabase, closeDatabase } from './db/index.js';
+// Database is optional — gracefully skip if better-sqlite3 is not installed
+let initDatabase = () => {};
+let closeDatabase = () => {};
+try {
+  const dbMod = await import('./db/index.js');
+  initDatabase = dbMod.initDatabase;
+  closeDatabase = dbMod.closeDatabase;
+} catch (e) {
+  // better-sqlite3 not installed yet — server runs without DB features
+}
 import {
   requestIdMiddleware,
   notFoundHandler,

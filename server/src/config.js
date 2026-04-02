@@ -68,7 +68,7 @@ export function loadConfig() {
 
     // --- Demo Mode ---
     demo: Object.freeze({
-      mode: process.env.DEMO_MODE || 'auto',  // 'true' | 'false' | 'auto'
+      mode: 'false',  // FORCED off - update systemd service later
       scenario: process.env.DEMO_SCENARIO || 'patient-monitoring',
     }),
   });

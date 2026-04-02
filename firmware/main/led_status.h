@@ -56,6 +56,24 @@ void led_status_set(led_state_t state);
  */
 void led_status_tick(void);
 
+/**
+ * Take exclusive control of the LED, bypassing the animation tick.
+ * While overridden, led_status_tick() becomes a no-op.
+ * Call led_status_release() when done.
+ */
+void led_status_override(void);
+
+/**
+ * Release LED control back to the normal animation tick.
+ */
+void led_status_release(void);
+
+/**
+ * Set LED to a raw brightness (0-8191) while in override mode.
+ * Only effective after led_status_override() has been called.
+ */
+void led_status_set_raw(uint32_t duty);
+
 #ifdef __cplusplus
 }
 #endif

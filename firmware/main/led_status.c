@@ -47,6 +47,7 @@ static const char *TAG = "led";
 static led_state_t s_current_state = LED_STATE_OFF;
 static int s_gpio_pin = -1;
 static bool s_initialized = false;
+static volatile bool s_override = false;
 
 /* ---------------------------------------------------------------------------
  * Public API
@@ -93,7 +94,7 @@ void led_status_set(led_state_t state)
 
 void led_status_tick(void)
 {
-    if (!s_initialized) return;
+    if (!s_initialized || s_override) return;
 
     /* Time in seconds (floating point for smooth animation) */
     float t = (float)(esp_timer_get_time() / 1000) / 1000.0f;
@@ -144,6 +145,33 @@ void led_status_tick(void)
     }
 
     /* Apply duty cycle */
+    ledc_set_duty(LEDC_LOW_SPEED_MODE, LED_CHANNEL, duty);
+    ledc_update_duty(LEDC_LOW_SPEED_MODE, LED_CHANNEL);
+}
+
+/* ---------------------------------------------------------------------------
+ * Override API (used by node_id blink)
+ * --------------------------------------------------------------------------- */
+
+void led_status_override(void)
+{
+    s_override = true;
+    /* Set LED off immediately */
+    if (s_initialized) {
+        ledc_set_duty(LEDC_LOW_SPEED_MODE, LED_CHANNEL, 0);
+        ledc_update_duty(LEDC_LOW_SPEED_MODE, LED_CHANNEL);
+    }
+}
+
+void led_status_release(void)
+{
+    s_override = false;
+}
+
+void led_status_set_raw(uint32_t duty)
+{
+    if (!s_initialized) return;
+    if (duty > LED_MAX_DUTY) duty = LED_MAX_DUTY;
     ledc_set_duty(LEDC_LOW_SPEED_MODE, LED_CHANNEL, duty);
     ledc_update_duty(LEDC_LOW_SPEED_MODE, LED_CHANNEL);
 }

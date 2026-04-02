@@ -266,6 +266,10 @@
     const canvas = $('#roomCanvas');
     if (!canvas || !window.RoomMap) return;
 
+    // Person detail panel elements
+    const personPanel  = $('#personDetail');
+    const btnClosePD   = $('#btnClosePersonDetail');
+
     // Create the enhanced room map, passing shared state
     roomMap = new window.RoomMap(canvas, state, {
       /** Called when the user drags a node to a new position. */
@@ -277,21 +281,32 @@
           body: JSON.stringify(position),
         }).catch(() => {});
       },
+
+      /** Called when the user taps a person dot on the room map. */
+      onPersonTapped: (_personIndex, _position, detail) => {
+        if (!personPanel) return;
+        // Populate the detail panel
+        $('#personDetailName').textContent = detail.label || `Person ${detail.id}`;
+        $('#pdHeartRate').textContent     = detail.heartRate   ? `${Math.round(detail.heartRate)} bpm` : '--';
+        $('#pdBreathingRate').textContent = detail.breathingRate ? `${Math.round(detail.breathingRate)} rpm` : '--';
+        $('#pdMotion').textContent        = detail.motionState || '--';
+        $('#pdConfidence').textContent    = detail.confidence  ? `${Math.round(detail.confidence * 100)}%` : '--';
+        $('#pdZone').textContent          = detail.zone        || '--';
+        $('#pdDetectedBy').textContent    = detail.detectedBy  || '--';
+        // Show the panel (slide up)
+        personPanel.classList.remove('hidden');
+      },
     });
+
+    // Close person detail panel
+    if (btnClosePD) {
+      btnClosePD.addEventListener('click', () => {
+        personPanel.classList.add('hidden');
+      });
+    }
 
     // Load saved node positions from server
     roomMap.loadLayout();
-
-    // Wire up edit mode toggle button
-    const btnEdit = $('#btnMapEdit');
-    const badge = $('#mapEditBadge');
-    if (btnEdit) {
-      btnEdit.addEventListener('click', () => {
-        const editing = roomMap.toggleEditMode();
-        btnEdit.classList.toggle('active', editing);
-        badge.classList.toggle('hidden', !editing);
-      });
-    }
 
     // Wire up reset button (clear saved positions)
     const btnReset = $('#btnMapReset');
@@ -942,6 +957,64 @@
         ? 'Simulated'
         : (data.radar?.enabled ? 'Enabled' : 'Disabled');
     }).catch(() => {});
+
+    // Populate node list with inline rename
+    renderSettingsNodeList();
+  }
+
+  /** Render the node list inside Settings for naming/numbering. */
+  function renderSettingsNodeList() {
+    const container = $('#settingsNodeList');
+    if (!container) return;
+    const nodes = state.nodes || [];
+    if (nodes.length === 0) {
+      container.innerHTML = '<div style="color:var(--muted);font-size:12px">No nodes discovered</div>';
+      return;
+    }
+    container.innerHTML = '';
+    nodes.forEach((node, idx) => {
+      const row = document.createElement('div');
+      row.className = 'settings-node-row';
+
+      const num = document.createElement('div');
+      num.className = 'settings-node-num';
+      num.textContent = idx + 1;
+
+      const mac = document.createElement('div');
+      mac.className = 'settings-node-mac';
+      mac.textContent = node.id.slice(-8);
+
+      const input = document.createElement('input');
+      input.className = 'settings-node-name-input';
+      input.value = node.name || `Node ${idx + 1}`;
+      input.placeholder = `Node ${idx + 1}`;
+
+      const saveBtn = document.createElement('button');
+      saveBtn.className = 'settings-node-save';
+      saveBtn.textContent = 'Save';
+      saveBtn.addEventListener('click', async () => {
+        try {
+          const res = await fetch(`${API}/nodes/${encodeURIComponent(node.id)}/name`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name: input.value.trim() || `Node ${idx + 1}` }),
+          });
+          if (res.ok) {
+            node.name = input.value.trim() || `Node ${idx + 1}`;
+            saveBtn.textContent = 'Saved';
+            setTimeout(() => { saveBtn.textContent = 'Save'; }, 1500);
+            // Update room map
+            if (roomMap) roomMap.render();
+          }
+        } catch { saveBtn.textContent = 'Error'; }
+      });
+
+      row.appendChild(num);
+      row.appendChild(mac);
+      row.appendChild(input);
+      row.appendChild(saveBtn);
+      container.appendChild(row);
+    });
   }
 
   function closeSettings() {
@@ -1123,6 +1196,248 @@
    * Open the OTA firmware management overlay.
    * Fetches current firmware info and node versions from the server.
    */
+  // ---------------------------------------------------------------------------
+  // Detection Tuning Panel
+  // ---------------------------------------------------------------------------
+  // Slider definitions grouped by category. Each entry maps a tuning key to a
+  // human-readable label, min, max, step, and optional unit.
+
+  const TUNING_GROUPS = [
+    {
+      title: 'Person Detection Thresholds',
+      params: [
+        { key: 'thresholdZero',  label: '0-person ceiling',   min: 0,   max: 1,   step: 0.01, unit: '' },
+        { key: 'thresholdOne',   label: '1-person ceiling',   min: 0.05,max: 2,   step: 0.01, unit: '' },
+        { key: 'thresholdTwo',   label: '1→2 transition',     min: 0.1, max: 3,   step: 0.05, unit: '' },
+        { key: 'thresholdThree', label: '2→3 transition',     min: 0.2, max: 5,   step: 0.05, unit: '' },
+        { key: 'thresholdFour',  label: '3→4 transition',     min: 0.5, max: 8,   step: 0.1,  unit: '' },
+        { key: 'thresholdFive',  label: '4→5 transition',     min: 1,   max: 10,  step: 0.1,  unit: '' },
+      ],
+    },
+    {
+      title: 'EMA Smoothing',
+      params: [
+        { key: 'emaPersonCount', label: 'Person count',       min: 0.0005, max: 0.05, step: 0.0005, unit: '' },
+        { key: 'emaHeartRate',   label: 'Heart rate',         min: 0.01, max: 0.5,  step: 0.01, unit: '' },
+        { key: 'emaBreathing',   label: 'Breathing rate',     min: 0.01, max: 0.5,  step: 0.01, unit: '' },
+        { key: 'emaMotion',      label: 'Motion level',       min: 0.05, max: 0.8,  step: 0.01, unit: '' },
+      ],
+    },
+    {
+      title: 'Hysteresis & Gating',
+      params: [
+        { key: 'hysteresisUp',       label: 'Flip 0→1 threshold', min: 0.05, max: 1.0, step: 0.05, unit: '' },
+        { key: 'hysteresisDown',     label: 'Flip-down gap',      min: 0.1,  max: 1.5, step: 0.05, unit: '' },
+        { key: 'vitalGateThreshold', label: 'Vital gate (ema)',   min: 0.1,  max: 1.0, step: 0.05, unit: '' },
+        { key: 'absoluteFloor',      label: 'Abs. floor',         min: 0.05, max: 1.0, step: 0.01, unit: '' },
+        { key: 'absoluteFloorScale', label: 'Abs. floor scale',   min: 0.1,  max: 2.0, step: 0.05, unit: '' },
+      ],
+    },
+    {
+      title: 'Motion Detection',
+      params: [
+        { key: 'motionThreshold',     label: 'Moving threshold',   min: 50,  max: 500, step: 5, unit: '' },
+        { key: 'stationaryThreshold', label: 'Stationary threshold',min: 30, max: 400, step: 5, unit: '' },
+      ],
+    },
+    {
+      title: 'Variance Blending',
+      params: [
+        { key: 'blendWeightShort', label: 'Short weight',  min: 0, max: 1.0, step: 0.05, unit: '' },
+        { key: 'blendWeightMed',   label: 'Medium weight', min: 0, max: 1.0, step: 0.05, unit: '' },
+        { key: 'blendWeightLong',  label: 'Long weight',   min: 0, max: 1.0, step: 0.05, unit: '' },
+      ],
+    },
+    {
+      title: 'Multi-Node Fusion',
+      params: [
+        { key: 'fusionQuietThreshold', label: 'Quiet node threshold', min: 0.5, max: 10, step: 0.5, unit: '' },
+        { key: 'fusionQuietWeight',    label: 'Quiet bias weight',    min: 0,   max: 1,  step: 0.05, unit: '' },
+        { key: 'maxBaselineVar',       label: 'Max baseline var',     min: 2,   max: 20, step: 0.5,  unit: '' },
+      ],
+    },
+    {
+      title: 'Recalibration',
+      params: [
+        { key: 'calibrationFrames', label: 'Calibration frames',  min: 50,  max: 500, step: 10, unit: '' },
+        { key: 'recalWindowS',      label: 'Recal window (s)',    min: 30,  max: 600, step: 10, unit: 's' },
+        { key: 'recalIntervalS',    label: 'Recal interval (s)',  min: 10,  max: 120, step: 5,  unit: 's' },
+        { key: 'recalMaxShift',     label: 'Max shift/cycle',     min: 0.1, max: 2.0, step: 0.1, unit: '' },
+        { key: 'recalBlendAlpha',   label: 'Blend alpha',         min: 0.05,max: 0.8, step: 0.05,unit: '' },
+      ],
+    },
+  ];
+
+  let _tuningDefaults = null; // Stored on first fetch for reset
+  let _tuningDebounce = null;
+
+  /** Open the tuning overlay and fetch current values from the server. */
+  async function openTuningOverlay() {
+    closeSettings();
+    $('#tuningOverlay').classList.add('active');
+    $('#tuningStatus').textContent = 'Loading...';
+
+    try {
+      const res = await fetch('/api/tuning');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      if (!_tuningDefaults) _tuningDefaults = { ...data };
+      renderTuningSliders(data);
+      loadTuningPresets(); // Populate preset dropdown
+      $('#tuningStatus').textContent = 'Connected — changes apply live';
+    } catch (err) {
+      $('#tuningStatus').textContent = `Error: ${err.message}`;
+      $('#tuningSliders').innerHTML = '<p style="color:var(--danger)">Could not load tuning data. Is the CSI bridge running?</p>';
+    }
+  }
+
+  /** Close the tuning overlay. */
+  function closeTuningOverlay() {
+    $('#tuningOverlay').classList.remove('active');
+  }
+
+  /** Build slider rows from the tuning groups definition. */
+  function renderTuningSliders(values) {
+    const container = $('#tuningSliders');
+    container.innerHTML = '';
+
+    for (const group of TUNING_GROUPS) {
+      const groupEl = document.createElement('div');
+      groupEl.className = 'tuning-group';
+
+      const titleEl = document.createElement('div');
+      titleEl.className = 'tuning-group-title';
+      titleEl.textContent = group.title;
+      groupEl.appendChild(titleEl);
+
+      for (const p of group.params) {
+        const row = document.createElement('div');
+        row.className = 'tuning-row';
+
+        const label = document.createElement('div');
+        label.className = 'tuning-label';
+        label.textContent = p.label;
+        label.title = p.key;
+
+        const slider = document.createElement('input');
+        slider.type = 'range';
+        slider.className = 'tuning-slider';
+        slider.min = p.min;
+        slider.max = p.max;
+        slider.step = p.step;
+        slider.value = values[p.key] ?? p.min;
+        slider.dataset.key = p.key;
+
+        const valDisplay = document.createElement('div');
+        valDisplay.className = 'tuning-value';
+        valDisplay.id = `tv_${p.key}`;
+        valDisplay.textContent = formatTuningValue(values[p.key], p);
+
+        slider.addEventListener('input', () => {
+          const v = parseFloat(slider.value);
+          valDisplay.textContent = formatTuningValue(v, p);
+          debouncedTuningSend(p.key, v);
+        });
+
+        row.appendChild(label);
+        row.appendChild(slider);
+        row.appendChild(valDisplay);
+        groupEl.appendChild(row);
+      }
+
+      container.appendChild(groupEl);
+    }
+  }
+
+  /** Format a tuning value for display. */
+  function formatTuningValue(val, param) {
+    if (val == null) return '--';
+    const num = typeof val === 'number' ? val : parseFloat(val);
+    // Show enough decimal places based on step size
+    const decimals = param.step < 0.01 ? 4 : param.step < 0.1 ? 3 : param.step < 1 ? 2 : 0;
+    return num.toFixed(decimals) + (param.unit || '');
+  }
+
+  /** Debounce tuning updates — sends at most once every 300ms. */
+  function debouncedTuningSend(key, value) {
+    if (_tuningDebounce) clearTimeout(_tuningDebounce);
+    _tuningDebounce = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/tuning', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ [key]: value }),
+        });
+        if (res.ok) {
+          $('#tuningStatus').textContent = `Updated ${key} = ${value}`;
+        } else {
+          $('#tuningStatus').textContent = `Failed to update ${key}: HTTP ${res.status}`;
+        }
+      } catch (err) {
+        $('#tuningStatus').textContent = `Send error: ${err.message}`;
+      }
+    }, 300);
+  }
+
+  /** Reset all tuning values to factory defaults. */
+  async function resetTuningDefaults() {
+    if (!_tuningDefaults) return;
+    try {
+      const res = await fetch('/api/tuning', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(_tuningDefaults),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        renderTuningSliders(data.tuning || _tuningDefaults);
+        $('#tuningStatus').textContent = 'Reset to defaults';
+      }
+    } catch (err) {
+      $('#tuningStatus').textContent = `Reset error: ${err.message}`;
+    }
+  }
+
+  /** Load and display saved tuning presets in the dropdown. */
+  async function loadTuningPresets() {
+    const select = $('#tuningPresetSelect');
+    if (!select) return;
+    try {
+      const res = await fetch('/api/tuning/presets');
+      if (!res.ok) return;
+      const presets = await res.json();
+      select.innerHTML = '<option value="">-- Load Preset --</option>';
+      for (const p of presets) {
+        const opt = document.createElement('option');
+        opt.value = p.file;
+        opt.textContent = `${p.version}${p.date ? ' (' + p.date.slice(0, 10) + ')' : ''}`;
+        opt.title = p.description || '';
+        select.appendChild(opt);
+      }
+    } catch { /* presets not available yet */ }
+  }
+
+  /** Restore a tuning preset by filename. */
+  async function restoreTuningPreset(filename) {
+    if (!filename) return;
+    try {
+      const res = await fetch(`/api/tuning/restore/${encodeURIComponent(filename)}`, { method: 'PUT' });
+      if (res.ok) {
+        const data = await res.json();
+        renderTuningSliders(data.tuning || {});
+        $('#tuningStatus').textContent = `Restored preset: ${data.preset}`;
+      } else {
+        $('#tuningStatus').textContent = `Restore failed: HTTP ${res.status}`;
+      }
+    } catch (err) {
+      $('#tuningStatus').textContent = `Restore error: ${err.message}`;
+    }
+  }
+
+  // ---------------------------------------------------------------------------
+  // OTA Firmware Updates
+  // ---------------------------------------------------------------------------
+
   async function openOtaOverlay() {
     closeSettings();
     $('#otaOverlay').classList.add('active');
@@ -1387,10 +1702,101 @@
     const floorplanSetup = new FloorplanSetup(document.body);
     $('#btnSetupFloorplan').addEventListener('click', () => {
       closeSettings();
-      floorplanSetup.open();
+      openZoneEditor();
     });
     document.addEventListener('floorplan-updated', () => {
       if (window.__roomMap) window.__roomMap.loadLayout();
+    });
+
+    // ── Zone Editor ──
+    function openZoneEditor() {
+      const overlay = $('#zoneEditor');
+      if (!overlay) return;
+      // Load current zones from server
+      fetch(`${API}/zones`).then(r => r.json()).then(zones => {
+        renderZoneRows(zones);
+        overlay.classList.add('active');
+      }).catch(() => {
+        renderZoneRows([]);
+        overlay.classList.add('active');
+      });
+    }
+
+    function renderZoneRows(zones) {
+      const list = $('#zoneList');
+      // Header row
+      let html = `<div class="zone-row-labels">
+        <span>Name</span><span>X %</span><span>Y %</span><span>W %</span><span>H %</span><span></span>
+      </div>`;
+      zones.forEach((z, i) => {
+        html += `<div class="zone-row" data-idx="${i}">
+          <input type="text" class="zn" value="${z.name || ''}" placeholder="Zone name">
+          <input type="number" class="zx" value="${Math.round((z.x || 0) * 100)}" min="0" max="100">
+          <input type="number" class="zy" value="${Math.round((z.y || 0) * 100)}" min="0" max="100">
+          <input type="number" class="zw" value="${Math.round((z.w || 30) * 100)}" min="5" max="100">
+          <input type="number" class="zh" value="${Math.round((z.h || 30) * 100)}" min="5" max="100">
+          <button class="zone-delete" title="Delete zone">&times;</button>
+        </div>`;
+      });
+      list.innerHTML = html;
+      // Delete buttons
+      list.querySelectorAll('.zone-delete').forEach(btn => {
+        btn.addEventListener('click', () => {
+          btn.closest('.zone-row').remove();
+        });
+      });
+    }
+
+    function collectZones() {
+      const rows = $$('#zoneList .zone-row');
+      return Array.from(rows).map(row => ({
+        name: row.querySelector('.zn').value.trim() || 'Zone',
+        x: (parseInt(row.querySelector('.zx').value, 10) || 0) / 100,
+        y: (parseInt(row.querySelector('.zy').value, 10) || 0) / 100,
+        w: (parseInt(row.querySelector('.zw').value, 10) || 30) / 100,
+        h: (parseInt(row.querySelector('.zh').value, 10) || 30) / 100,
+      }));
+    }
+
+    $('#btnAddZone')?.addEventListener('click', () => {
+      const list = $('#zoneList');
+      const idx = list.querySelectorAll('.zone-row').length;
+      const row = document.createElement('div');
+      row.className = 'zone-row';
+      row.dataset.idx = idx;
+      row.innerHTML = `
+        <input type="text" class="zn" value="" placeholder="Zone name">
+        <input type="number" class="zx" value="0" min="0" max="100">
+        <input type="number" class="zy" value="0" min="0" max="100">
+        <input type="number" class="zw" value="30" min="5" max="100">
+        <input type="number" class="zh" value="30" min="5" max="100">
+        <button class="zone-delete" title="Delete zone">&times;</button>
+      `;
+      row.querySelector('.zone-delete').addEventListener('click', () => row.remove());
+      list.appendChild(row);
+      row.querySelector('.zn').focus();
+    });
+
+    $('#btnSaveZones')?.addEventListener('click', async () => {
+      const zones = collectZones();
+      try {
+        await fetch(`${API}/zones`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(zones),
+        });
+        // Update room map immediately
+        if (roomMap) {
+          roomMap.zones = zones;
+        }
+      } catch (e) {
+        console.error('Failed to save zones', e);
+      }
+      $('#zoneEditor').classList.remove('active');
+    });
+
+    $('#btnCloseZoneEditor')?.addEventListener('click', () => {
+      $('#zoneEditor').classList.remove('active');
     });
 
     // Quick calibrate button on room map
@@ -1437,6 +1843,12 @@
       if (e.key === 'Enter') saveBeaconEdit();
       if (e.key === 'Escape') closeBeaconEdit();
     });
+
+    // Detection Tuning overlay
+    $('#btnOpenTuning').addEventListener('click', openTuningOverlay);
+    $('#btnCloseTuning').addEventListener('click', closeTuningOverlay);
+    $('#btnResetTuning').addEventListener('click', resetTuningDefaults);
+    $('#tuningPresetSelect').addEventListener('change', (e) => restoreTuningPreset(e.target.value));
 
     // OTA Firmware Update overlay
     $('#btnOpenOta').addEventListener('click', openOtaOverlay);

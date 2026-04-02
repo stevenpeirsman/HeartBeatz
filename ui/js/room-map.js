@@ -91,6 +91,7 @@ class RoomMap {
     this.ctx = canvas.getContext('2d');
     this.state = appState;
     this.onNodeMoved = opts.onNodeMoved || null;
+    this.onPersonTapped = opts.onPersonTapped || null;
 
     // --- Internal state ---
 
@@ -100,11 +101,12 @@ class RoomMap {
     /** Person trail history: Array of { persons: [{x,y}], timestamp } */
     this.trails = [];
 
+    /** Dynamic zones from server: Array<{id, name, x, y, w, h}> (normalized 0-1) */
+    this.zones = [];
+
     /** Currently dragged node ID (null if not dragging) */
     this._dragNodeId = null;
 
-    /** Whether the map is in edit mode (shows drag handles on nodes) */
-    this.editMode = false;
 
     /** Off-screen canvas for heatmap rendering (avoids re-allocation). */
     this._heatCanvas = document.createElement('canvas');
@@ -128,6 +130,31 @@ class RoomMap {
   // Public API
   // =========================================================================
 
+  /**
+   * Build the room rectangle with cutout dimensions.
+   * Shared by render(), interaction handlers, and cursor feedback
+   * so that hit-testing matches what is drawn on screen.
+   */
+  _getRoomRect() {
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const room = {
+      x: ROOM_PADDING,
+      y: ROOM_PADDING,
+      w: w - ROOM_PADDING * 2,
+      h: h - ROOM_PADDING * 2,
+    };
+    // L-shaped floorplan cutout (Inkomhal / spiral staircase)
+    room.cutoutFracX = 0.30;
+    room.cutoutFracY = 0.42;
+    room.cutoutW = room.w * room.cutoutFracX;
+    room.cutoutH = room.h * room.cutoutFracY;
+    room.cutoutX = room.x + room.w - room.cutoutW;
+    room.cutoutY = room.y + room.h - room.cutoutH;
+    room.mainBottomW = room.w - room.cutoutW;
+    return room;
+  }
+
   /** Main render call — draw everything on the canvas. */
   render() {
     const ctx = this.ctx;
@@ -135,35 +162,7 @@ class RoomMap {
     const h = this.canvas.height;
 
     // Room area (padded bounding box for the L-shaped floorplan)
-    const room = {
-      x: ROOM_PADDING,
-      y: ROOM_PADDING,
-      w: w - ROOM_PADDING * 2,
-      h: h - ROOM_PADDING * 2,
-    };
-
-    // Actual floorplan: open-plan rectangle with bottom-right cutout
-    // (Inkomhal / spiral staircase area). Based on real dimensions:
-    // ~11.6m × 7.95m with entry hall cutting into bottom-right.
-    //
-    //   ┌────────────────────────────┐
-    //   │  Zithoek   Eethoek  Keuken│  ← garden/window wall (top)
-    //   │  (sitting)  (dining) (cook)│
-    //   │   couch      table   oven  │
-    //   │                  ┌─────────┘  ← cutout for Inkomhal
-    //   │   TV closet      │ entry/
-    //   └──────────────────┘ stairs
-    //
-    // cutoutFraction: how far LEFT the cutout starts (from right edge)
-    // cutoutHeight:   how tall the cutout is (from bottom)
-    room.cutoutFracX = 0.30;   // Inkomhal is ~30% of room width
-    room.cutoutFracY = 0.42;   // Inkomhal is ~42% of room height
-    room.cutoutW = room.w * room.cutoutFracX;
-    room.cutoutH = room.h * room.cutoutFracY;
-    room.cutoutX = room.x + room.w - room.cutoutW;  // X where cutout starts
-    room.cutoutY = room.y + room.h - room.cutoutH;  // Y where cutout starts
-    // Main room width excluding cutout at bottom
-    room.mainBottomW = room.w - room.cutoutW;
+    const room = this._getRoomRect();
 
     // Record person positions for trails
     this._recordTrailPoint();
@@ -236,10 +235,8 @@ class RoomMap {
     // ── Layer 11: Legend ──
     this._drawLegend(ctx, w, h);
 
-    // ── Layer 12: Edit mode handles ──
-    if (this.editMode) {
-      this._drawEditHandles(ctx, room);
-    }
+    // ── Layer 12: Drag handles (always visible, subtle) ──
+    this._drawDragHandles(ctx, room);
   }
 
   /**
@@ -254,6 +251,10 @@ class RoomMap {
         if (node.position) {
           this.nodePositions.set(node.id, node.position);
         }
+      }
+      // Load dynamic zones (overrides hardcoded zone labels when present)
+      if (data.zones && data.zones.length > 0) {
+        this.zones = data.zones;
       }
     } catch {
       // Layout not available yet — nodes will auto-position
@@ -291,11 +292,6 @@ class RoomMap {
     }
   }
 
-  /** Toggle the node placement edit mode on/off. */
-  toggleEditMode() {
-    this.editMode = !this.editMode;
-    return this.editMode;
-  }
 
   // =========================================================================
   // Drawing Layers
@@ -346,39 +342,8 @@ class RoomMap {
     ctx.lineWidth = 2;
     ctx.stroke();
 
-    // ── Zone divider lines (dashed) ──
-    ctx.strokeStyle = 'rgba(30,33,48,0.6)';
-    ctx.lineWidth = 1;
-    ctx.setLineDash([6, 4]);
-
-    // Vertical divider: Zithoek | Eethoek (at ~42% from left)
-    const divZitEet = x + w * 0.42;
-    ctx.beginPath();
-    ctx.moveTo(divZitEet, y);
-    ctx.lineTo(divZitEet, y + h);
-    ctx.stroke();
-
-    // Vertical divider: Eethoek | Keuken (at ~72% from left)
-    const divEetKeu = x + w * 0.72;
-    ctx.beginPath();
-    ctx.moveTo(divEetKeu, y);
-    ctx.lineTo(divEetKeu, cutoutY);
-    ctx.stroke();
-
-    ctx.setLineDash([]);
-
-    // ── Zone labels ──
-    ctx.fillStyle = 'rgba(107,114,128,0.35)';
-    ctx.font = '10px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('ZITHOEK', x + w * 0.21, y + 16);
-    ctx.fillText('EETHOEK', (divZitEet + divEetKeu) / 2, y + 16);
-    ctx.fillText('KEUKEN', (divEetKeu + x + w) / 2, y + 16);
-
-    // Inkomhal label inside the cutout area (dimmer, outside main room)
-    ctx.fillStyle = 'rgba(107,114,128,0.15)';
-    ctx.font = '9px Inter, sans-serif';
-    ctx.fillText('INKOMHAL', cutoutX + cutoutW / 2, cutoutY + 16);
+    // ── Zones (dynamic or fallback hardcoded) ──
+    this._drawZones(ctx, room);
 
     // ── Furniture hints (very subtle rectangles) ──
     ctx.strokeStyle = 'rgba(30,33,48,0.5)';
@@ -570,6 +535,70 @@ class RoomMap {
     }
   }
 
+  /**
+   * Draw zone regions — either dynamic (from this.zones) or hardcoded fallback.
+   * Dynamic zones are rendered as dashed rectangles with centered labels.
+   */
+  _drawZones(ctx, room) {
+    const { x, y, w, h, cutoutX, cutoutY, cutoutW } = room;
+
+    if (this.zones.length > 0) {
+      // ── Dynamic zones from server ──
+      for (const z of this.zones) {
+        const zx = x + z.x * w;
+        const zy = y + z.y * h;
+        const zw = z.w * w;
+        const zh = z.h * h;
+
+        // Zone boundary (dashed)
+        ctx.strokeStyle = 'rgba(79,140,255,0.12)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([6, 4]);
+        ctx.strokeRect(zx, zy, zw, zh);
+        ctx.setLineDash([]);
+
+        // Zone label (centered)
+        ctx.fillStyle = 'rgba(107,114,128,0.35)';
+        ctx.font = '10px Inter, sans-serif';
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'top';
+        ctx.fillText(z.name.toUpperCase(), zx + zw / 2, zy + 4);
+      }
+      ctx.textBaseline = 'alphabetic';
+      return;
+    }
+
+    // ── Fallback: hardcoded zones ──
+    ctx.strokeStyle = 'rgba(30,33,48,0.6)';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([6, 4]);
+
+    const divZitEet = x + w * 0.42;
+    ctx.beginPath();
+    ctx.moveTo(divZitEet, y);
+    ctx.lineTo(divZitEet, y + h);
+    ctx.stroke();
+
+    const divEetKeu = x + w * 0.72;
+    ctx.beginPath();
+    ctx.moveTo(divEetKeu, y);
+    ctx.lineTo(divEetKeu, cutoutY);
+    ctx.stroke();
+
+    ctx.setLineDash([]);
+
+    ctx.fillStyle = 'rgba(107,114,128,0.35)';
+    ctx.font = '10px Inter, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('ZITHOEK', x + w * 0.21, y + 16);
+    ctx.fillText('EETHOEK', (divZitEet + divEetKeu) / 2, y + 16);
+    ctx.fillText('KEUKEN', (divEetKeu + x + w) / 2, y + 16);
+
+    ctx.fillStyle = 'rgba(107,114,128,0.15)';
+    ctx.font = '9px Inter, sans-serif';
+    ctx.fillText('INKOMHAL', cutoutX + cutoutW / 2, cutoutY + 16);
+  }
+
   /** Layer 6: Sensor node icons with WiFi arcs, labels, and per-node vitals. */
   _drawNodes(ctx, room) {
     const nodes = this._getNodeScreenPositions(room);
@@ -601,23 +630,28 @@ class RoomMap {
         ctx.fill();
       }
 
-      // Node dot
+      // Node dot with number badge
       ctx.fillStyle = isOnline ? COLORS.nodeFill : COLORS.textMuted;
       ctx.beginPath();
-      ctx.arc(sx, sy, 7, 0, Math.PI * 2);
+      ctx.arc(sx, sy, 9, 0, Math.PI * 2);
       ctx.fill();
 
-      // Inner dot
-      ctx.fillStyle = COLORS.bg;
-      ctx.beginPath();
-      ctx.arc(sx, sy, 3, 0, Math.PI * 2);
-      ctx.fill();
+      // Node number inside the dot (1-based index)
+      const allNodes = this.state.nodes || [];
+      const nodeIdx = allNodes.findIndex(n => n.id === node.id);
+      const nodeNum = nodeIdx >= 0 ? String(nodeIdx + 1) : '?';
+      ctx.fillStyle = '#fff';
+      ctx.font = 'bold 10px Inter, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(nodeNum, sx, sy);
+      ctx.textBaseline = 'alphabetic'; // reset
 
-      // Label
+      // Label (name)
       ctx.fillStyle = isOnline ? COLORS.textLight : COLORS.textMuted;
       ctx.font = '10px Inter, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(node.name || 'Node', sx, sy + 20);
+      ctx.fillText(node.name || `Node ${nodeNum}`, sx, sy + 22);
 
       // --- Per-node vitals mini-card ---
       // Match this node to the broadcast vitals by MAC address
@@ -894,33 +928,34 @@ class RoomMap {
     });
   }
 
-  /** Layer 12: Edit mode handles — dashed circles around nodes for dragging. */
-  _drawEditHandles(ctx, room) {
+  /** Layer 12: Subtle drag handles — always visible, highlight when dragging. */
+  _drawDragHandles(ctx, room) {
     const nodes = this._getNodeScreenPositions(room);
-
-    ctx.strokeStyle = 'rgba(245,158,11,0.5)';
-    ctx.lineWidth = 2;
-    ctx.setLineDash([4, 4]);
+    const dragging = this._dragNodeId;
 
     for (const { node, sx, sy } of nodes) {
-      ctx.beginPath();
-      ctx.arc(sx, sy, NODE_DRAG_RADIUS, 0, Math.PI * 2);
-      ctx.stroke();
+      const isActive = dragging === node.id;
 
-      // "Drag" hint icon (arrows)
-      ctx.fillStyle = 'rgba(245,158,11,0.6)';
-      ctx.font = '8px Inter, sans-serif';
-      ctx.textAlign = 'center';
-      ctx.fillText('drag', sx, sy + 38);
+      if (isActive) {
+        // Active drag: bright orange dashed ring
+        ctx.strokeStyle = 'rgba(245,158,11,0.6)';
+        ctx.lineWidth = 2;
+        ctx.setLineDash([4, 4]);
+        ctx.beginPath();
+        ctx.arc(sx, sy, NODE_DRAG_RADIUS, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      } else {
+        // Idle: very subtle dotted ring to hint draggability
+        ctx.strokeStyle = 'rgba(79,140,255,0.15)';
+        ctx.lineWidth = 1;
+        ctx.setLineDash([2, 4]);
+        ctx.beginPath();
+        ctx.arc(sx, sy, NODE_DRAG_RADIUS, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.setLineDash([]);
+      }
     }
-    ctx.setLineDash([]);
-
-    // "EDIT MODE" label
-    ctx.fillStyle = 'rgba(245,158,11,0.7)';
-    ctx.font = 'bold 11px Inter, sans-serif';
-    ctx.textAlign = 'center';
-    ctx.fillText('EDIT MODE — Drag nodes to match room layout',
-      (room.x + room.w / 2), room.y - 6);
   }
 
   // =========================================================================
@@ -1098,8 +1133,35 @@ class RoomMap {
     ctx.closePath();
   }
 
+  /**
+   * Build a detail object for a detected person.
+   * Aggregates data from sensing, vitals, and nearest node.
+   */
+  _getPersonDetail(personIndex) {
+    const vitals = this.state.vitals || {};
+    const nodes = this.state.nodes || [];
+    const sensing = this.state.sensing || {};
+
+    // Find the node with the strongest detection for this person
+    const onlineNodes = nodes.filter(n => n.status === 'online');
+    const nearestNode = onlineNodes[personIndex % onlineNodes.length] || onlineNodes[0];
+
+    return {
+      id: personIndex + 1,
+      label: `Person ${personIndex + 1}`,
+      heartRate: vitals.heartRate || 0,
+      breathingRate: vitals.breathingRate || 0,
+      motionLevel: vitals.motionLevel || 0,
+      motionState: vitals.motion || 'unknown',
+      confidence: sensing.confidence || vitals.confidence || 0,
+      nearestNode: nearestNode?.name || nearestNode?.id || '?',
+      detectedBy: onlineNodes.map(n => n.name || n.id?.slice(-5)).join(', '),
+      zone: nearestNode?.zone || 'Unknown',
+    };
+  }
+
   // =========================================================================
-  // Touch / Mouse Interaction (Node Dragging)
+  // Touch / Mouse Interaction (Node Dragging + Person Tap)
   // =========================================================================
 
   _setupInteraction() {
@@ -1108,38 +1170,96 @@ class RoomMap {
     this.canvas.addEventListener('pointermove', (e) => this._onPointerMove(e));
     this.canvas.addEventListener('pointerup', (e) => this._onPointerUp(e));
     this.canvas.addEventListener('pointercancel', (e) => this._onPointerUp(e));
+
+    // Cursor feedback: show grab cursor when hovering over a node or person
+    this.canvas.addEventListener('mousemove', (e) => {
+      if (this._dragNodeId) return; // already dragging
+
+      const rect = this.canvas.getBoundingClientRect();
+      const scaleX = this.canvas.width / rect.width;
+      const scaleY = this.canvas.height / rect.height;
+      const mx = (e.clientX - rect.left) * scaleX;
+      const my = (e.clientY - rect.top) * scaleY;
+
+      const room = this._getRoomRect();
+
+      let cursor = 'default';
+
+      // Check nodes
+      const nodes = this._getNodeScreenPositions(room);
+      for (const { sx, sy } of nodes) {
+        if (Math.sqrt((mx - sx) ** 2 + (my - sy) ** 2) < NODE_DRAG_RADIUS) {
+          cursor = 'grab';
+          break;
+        }
+      }
+
+      // Check persons
+      if (cursor === 'default') {
+        const personCount = this.state.vitals?.persons || 0;
+        if (personCount > 0) {
+          const positions = this._getPersonPositions(personCount);
+          for (const pos of positions) {
+            const px = room.x + pos.x * room.w;
+            const py = room.y + pos.y * room.h;
+            if (Math.sqrt((mx - px) ** 2 + (my - py) ** 2) < 30) {
+              cursor = 'pointer';
+              break;
+            }
+          }
+        }
+      }
+
+      this.canvas.style.cursor = cursor;
+    });
   }
 
   _onPointerDown(e) {
-    if (!this.editMode) return;
-
     const rect = this.canvas.getBoundingClientRect();
     const scaleX = this.canvas.width / rect.width;
     const scaleY = this.canvas.height / rect.height;
     const mx = (e.clientX - rect.left) * scaleX;
     const my = (e.clientY - rect.top) * scaleY;
 
-    const room = {
-      x: ROOM_PADDING,
-      y: ROOM_PADDING,
-      w: this.canvas.width - ROOM_PADDING * 2,
-      h: this.canvas.height - ROOM_PADDING * 2,
-    };
+    const room = this._getRoomRect();
 
+    // Check if a node was tapped — start dragging
     const nodes = this._getNodeScreenPositions(room);
     for (const { node, sx, sy } of nodes) {
       const dx = mx - sx;
       const dy = my - sy;
       if (Math.sqrt(dx * dx + dy * dy) < NODE_DRAG_RADIUS) {
         this._dragNodeId = node.id;
+        this._dragStartPos = { x: sx, y: sy };
+        this._dragMoved = false;
         e.preventDefault();
         return;
+      }
+    }
+
+    // Check if a person dot was tapped — show detail
+    const personCount = this.state.vitals?.persons || 0;
+    if (personCount > 0) {
+      const positions = this._getPersonPositions(personCount);
+      for (let p = 0; p < positions.length; p++) {
+        const px = room.x + positions[p].x * room.w;
+        const py = room.y + positions[p].y * room.h;
+        const dx = mx - px;
+        const dy = my - py;
+        if (Math.sqrt(dx * dx + dy * dy) < 30) {
+          if (this.onPersonTapped) {
+            this.onPersonTapped(p, positions[p], this._getPersonDetail(p));
+          }
+          e.preventDefault();
+          return;
+        }
       }
     }
   }
 
   _onPointerMove(e) {
     if (!this._dragNodeId) return;
+    this._dragMoved = true;
 
     const rect = this.canvas.getBoundingClientRect();
     const scaleX = this.canvas.width / rect.width;
@@ -1147,12 +1267,7 @@ class RoomMap {
     const mx = (e.clientX - rect.left) * scaleX;
     const my = (e.clientY - rect.top) * scaleY;
 
-    const room = {
-      x: ROOM_PADDING,
-      y: ROOM_PADDING,
-      w: this.canvas.width - ROOM_PADDING * 2,
-      h: this.canvas.height - ROOM_PADDING * 2,
-    };
+    const room = this._getRoomRect();
 
     // Convert screen coordinates to normalized 0-1
     const nx = Math.max(0, Math.min(1, (mx - room.x) / room.w));

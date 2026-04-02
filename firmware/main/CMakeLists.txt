@@ -12,6 +12,8 @@ idf_component_register(
         "radar_ld2410s.c"
         "led_status.c"
         "nvs_config.c"
+        "node_id.c"
+        "led_strip_encoder.c"
     INCLUDE_DIRS
         "."
         "../include"
@@ -23,4 +25,5 @@ idf_component_register(
         nvs_flash
         esp_timer
         lwip
+        esp_http_client
 )

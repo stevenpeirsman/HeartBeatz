@@ -33,7 +33,7 @@
 import dgram from 'dgram';
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import { readFileSync } from 'fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'fs';
 import { join, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -50,29 +50,114 @@ const TICK_MS   = parseInt(process.env.TICK_MS || '100', 10);  // 10 Hz output
 const ADR018_MAGIC = 0xC5110001;
 const HEADER_SIZE  = 22;  // 4 magic + 2 ver + 6 mac + 4 seq + 4 ts + 2 csi_len
 
-// EMA smoothing factors (0 = no smoothing, 1 = no memory)
-const EMA_PERSON_COUNT = 0.002;  // v2.8: 0.003→0.002 — ~13.9s half-life at 25Hz; 0.003 still showed ema stddev ~1.19 on node 56:5c (blendedVar swing 2.3→7.5 over 15s)
-const EMA_HEART_RATE   = 0.12;   // Slightly faster for per-person tracking
-const EMA_BREATHING    = 0.08;   // Slightly faster for per-person tracking
-const EMA_MOTION       = 0.30;   // Fast — catch kids running quickly
+// ---------------------------------------------------------------------------
+// Live-Tunable Configuration (adjustable at runtime via /api/tuning)
+// ---------------------------------------------------------------------------
+// All detection thresholds are in this object so the admin UI can tweak them
+// without restarting the bridge. GET /api/tuning returns current values;
+// PUT /api/tuning accepts a partial JSON object to merge.
 
-// Calibration: first N seconds establish baseline
-const CALIBRATION_FRAMES = 150;  // ~6s at 25 Hz (faster calibration)
+const tuning = {
+  // EMA smoothing factors (0 = no smoothing, 1 = no memory)
+  emaPersonCount: 0.002,   // v2.8: ~13.9s half-life at 25Hz
+  emaHeartRate:   0.12,    // Slightly faster for per-person tracking
+  emaBreathing:   0.08,    // Slightly faster for per-person tracking
+  emaMotion:      0.30,    // Fast — catch kids running quickly
+
+  // Person count threshold ladder (effectiveVar breakpoints)
+  thresholdZero:    0.05,  // Below → 0 people
+  thresholdOne:     0.20,  // Below → 1 person
+  thresholdTwo:     0.50,  // Below → interpolate 1→2
+  thresholdThree:   1.00,  // Below → interpolate 2→3
+  thresholdFour:    1.80,  // Below → interpolate 3→4
+  thresholdFive:    3.00,  // Above → cap at 5
+
+  // Absolute floor fallback (v2.22)
+  absoluteFloor:       0.22,  // blendedVar must exceed this for fallback person detection
+  absoluteFloorScale:  0.35,  // Maps blendedVar 0.22→0.57 to personCount 0→1
+
+  // Max baseline variance cap
+  maxBaselineVar:    7.0,
+
+  // Hysteresis thresholds for person count flipping
+  hysteresisUp:    0.30,   // emaPC must exceed this to flip 0→1
+  hysteresisDown:  0.40,   // |emaPC - personCount| must exceed this to flip
+
+  // Motion detection thresholds
+  motionThreshold:     180,
+  stationaryThreshold: 170,
+
+  // Vital sign gating
+  vitalGateThreshold: 0.45,  // Suppress vitals when emaPC below this
+
+  // Calibration
+  calibrationFrames: 150,   // ~6s at 25Hz
+
+  // Rolling recalibration
+  recalWindowS:      120,   // 2-minute sliding window
+  recalIntervalS:    30,    // Re-evaluate every 30s
+  recalQuietPctile:  10,    // 10th percentile as quiet floor
+  recalMinFrames:    500,   // Min frames before first recal
+  recalMaxShift:     0.5,   // Max baseline shift per cycle
+  recalBlendAlpha:   0.3,   // Blend weight for new baseline
+
+  // Variance blending weights (must sum to 1.0)
+  blendWeightShort:  0.10,  // Recent 50 frames (~2.5s)
+  blendWeightMed:    0.20,  // 120 frames (~6s)
+  blendWeightLong:   0.70,  // 400 frames (~20s)
+
+  // Multi-node fusion
+  fusionQuietThreshold: 2.0,  // Nodes below this are "quiet"
+  fusionQuietWeight:    0.5,  // Weight of quiet-node ref in fusion
+};
+
+// Legacy const aliases REMOVED — all code now reads tuning.* directly for live updates.
+// (remaining legacy aliases removed — use tuning.recalMaxShift / tuning.recalBlendAlpha)
 
 // ---------------------------------------------------------------------------
-// v3: Rolling Recalibration Configuration
+// Tuning Persistence — load from disk on startup, save on every PUT
 // ---------------------------------------------------------------------------
-// Instead of a one-shot calibration that can be poisoned by people present,
-// we continuously track the "quiet floor" — the lowest sustained variance
-// seen over a sliding window. This adapts to environmental changes (doors,
-// furniture, interference) while ignoring transient human presence.
+const __bridgeDirname = dirname(fileURLToPath(import.meta.url));
+const DATA_DIR = join(__bridgeDirname, '..', 'data');
+const TUNING_ACTIVE_PATH = join(DATA_DIR, 'tuning-active.json');
 
-const RECAL_WINDOW_S      = 120;   // 2 minutes of history to find quiet periods
-const RECAL_INTERVAL_S    = 30;    // Re-evaluate baseline every 30 seconds
-const RECAL_QUIET_PCTILE  = 10;    // Use 10th percentile of variance as "quiet floor"
-const RECAL_MIN_FRAMES    = 500;   // Need at least 500 frames before first recalibration
-const RECAL_MAX_SHIFT     = 0.5;   // Max baseline shift per recalibration cycle (damping)
-const RECAL_BLEND_ALPHA   = 0.3;   // Blend new baseline with old (0=keep old, 1=fully new)
+/** Load saved tuning from disk (merges into the tuning object). */
+function loadTuningFromDisk() {
+  try {
+    if (!existsSync(TUNING_ACTIVE_PATH)) return;
+    const raw = JSON.parse(readFileSync(TUNING_ACTIVE_PATH, 'utf-8'));
+    const saved = raw.tuning || raw; // Support both {tuning:{...}} and flat format
+    let loaded = 0;
+    for (const [key, val] of Object.entries(saved)) {
+      if (key in tuning && typeof val === 'number' && isFinite(val)) {
+        tuning[key] = val;
+        loaded++;
+      }
+    }
+    console.log(`[Tuning] Loaded ${loaded} params from ${TUNING_ACTIVE_PATH}`);
+  } catch (err) {
+    console.warn(`[Tuning] Could not load saved tuning: ${err.message}`);
+  }
+}
+
+/** Save current tuning to disk. */
+function saveTuningToDisk() {
+  try {
+    if (!existsSync(DATA_DIR)) mkdirSync(DATA_DIR, { recursive: true });
+    const payload = {
+      version: 'active',
+      savedAt: new Date().toISOString(),
+      tuning: { ...tuning },
+    };
+    writeFileSync(TUNING_ACTIVE_PATH, JSON.stringify(payload, null, 2));
+    console.log(`[Tuning] Saved to ${TUNING_ACTIVE_PATH}`);
+  } catch (err) {
+    console.warn(`[Tuning] Could not save tuning: ${err.message}`);
+  }
+}
+
+// Apply saved tuning on startup
+loadTuningFromDisk();
 
 // ---------------------------------------------------------------------------
 // Utility Functions
@@ -205,6 +290,7 @@ class NodeState {
   constructor(mac) {
     this.mac = mac;
     this.lastSeen = Date.now();
+    this.firstSeen = Date.now();
     this.frameCount = 0;
     this.lastSeq = 0;
 
@@ -377,7 +463,7 @@ function updateSampleRate(node) {
  * Called once enough frames have been collected.
  */
 function calibrate(node) {
-  if (node.amplitudeHistory.length < CALIBRATION_FRAMES) return;
+  if (node.amplitudeHistory.length < tuning.calibrationFrames) return;
   if (node.calibrated) return;
 
   node.baselineMeanAmp = mean(node.amplitudeHistory);
@@ -414,7 +500,7 @@ function calibrate(node) {
  */
 function rollingRecalibrate(node) {
   if (!node.calibrated) return;  // Wait for initial calibration first
-  if (node.frameCount < RECAL_MIN_FRAMES) return;
+  if (node.frameCount < tuning.recalMinFrames) return;
 
   const now = Date.now();
 
@@ -425,13 +511,13 @@ function rollingRecalibrate(node) {
   }
 
   // Trim old entries beyond the recalibration window
-  const cutoff = now - RECAL_WINDOW_S * 1000;
+  const cutoff = now - tuning.recalWindowS * 1000;
   while (node.varianceLog.length > 0 && node.varianceLog[0].t < cutoff) {
     node.varianceLog.shift();
   }
 
   // Only recalibrate at the configured interval
-  if (now - node.lastRecalTime < RECAL_INTERVAL_S * 1000) return;
+  if (now - node.lastRecalTime < tuning.recalIntervalS * 1000) return;
   node.lastRecalTime = now;
 
   // Need enough variance samples to make a meaningful assessment
@@ -439,14 +525,14 @@ function rollingRecalibrate(node) {
 
   // Find the Nth percentile of variance = our "quiet floor" estimate
   const sortedVars = node.varianceLog.map(e => e.v).sort((a, b) => a - b);
-  const pctileIdx = Math.floor(sortedVars.length * RECAL_QUIET_PCTILE / 100);
+  const pctileIdx = Math.floor(sortedVars.length * tuning.recalQuietPctile / 100);
   const quietFloor = sortedVars[Math.max(0, pctileIdx)];
 
   // Damped update: don't shift too far in one step
   const oldBaseline = node.baselineVariance;
   const delta = quietFloor - oldBaseline;
-  const clampedDelta = Math.sign(delta) * Math.min(Math.abs(delta), RECAL_MAX_SHIFT);
-  const newBaseline = oldBaseline + clampedDelta * RECAL_BLEND_ALPHA;
+  const clampedDelta = Math.sign(delta) * Math.min(Math.abs(delta), tuning.recalMaxShift);
+  const newBaseline = oldBaseline + clampedDelta * tuning.recalBlendAlpha;
 
   // Apply same minimum floor as initial calibration
   node.baselineVariance = Math.max(0.5, newBaseline);
@@ -455,8 +541,8 @@ function rollingRecalibrate(node) {
   // (use the amplitude mean from the same percentile window)
   if (node.amplitudeHistory.length >= 50) {
     const recentMean = mean(node.amplitudeHistory.slice(-50));
-    node.baselineMeanAmp = node.baselineMeanAmp * (1 - RECAL_BLEND_ALPHA * 0.5)
-                         + recentMean * (RECAL_BLEND_ALPHA * 0.5);
+    node.baselineMeanAmp = node.baselineMeanAmp * (1 - tuning.recalBlendAlpha * 0.5)
+                         + recentMean * (tuning.recalBlendAlpha * 0.5);
   }
 
   node.recalCount++;
@@ -513,7 +599,7 @@ function estimatePersonCount(node) {
   // Blend: heavily favor long-term for stability; short-term detects fast changes
   // v2.1: reduced short-term weight (0.15→0.10) to cut blendedVar volatility
   //       on noisy nodes (observed 6.4→8.9 swing over 7s on node 56:5c)
-  const blendedVar = 0.10 * temporalVar + 0.20 * longVar + 0.70 * veryLongVar;
+  const blendedVar = tuning.blendWeightShort * temporalVar + tuning.blendWeightMed * longVar + tuning.blendWeightLong * veryLongVar;
 
   // --- Metric 2: Subcarrier decorrelation ---
   let subcarrierScore = 0;
@@ -547,9 +633,8 @@ function estimatePersonCount(node) {
   //       excessVar/effectiveVar to wildly over-count (rawPersonCount 4.7–5 when
   //       blendedVar spiked to 8–13). 7.0 reduces over-counting while still
   //       allowing detection on inherently noisy nodes.
-  const MAX_BASELINE_VAR = 7.0;
   const noiseFloor = node.calibrated
-    ? Math.max(0.05, Math.min(MAX_BASELINE_VAR, node.baselineVariance))
+    ? Math.max(0.05, Math.min(tuning.maxBaselineVar, node.baselineVariance))
     : 0.1;
 
   // Excess variance = how much above baseline the signal currently is.
@@ -577,21 +662,24 @@ function estimatePersonCount(node) {
   node.excessVar = excessVar;
 
   // --- Combine metrics into person count estimate ---
+  // Person count threshold ladder — all breakpoints read from tuning object
+  // so the admin UI can live-adjust detection sensitivity
+  const t = tuning;
   let rawCount;
-  if (effectiveVar < 0.05) {
+  if (effectiveVar < t.thresholdZero) {
     rawCount = 0;
-  } else if (effectiveVar < 0.2) {
+  } else if (effectiveVar < t.thresholdOne) {
     rawCount = 1;
-  } else if (effectiveVar < 0.5) {
-    rawCount = 1 + (effectiveVar - 0.2) / 0.3;    // Interpolate 1→2
-  } else if (effectiveVar < 1.0) {
-    rawCount = 2 + (effectiveVar - 0.5) / 0.5;    // Interpolate 2→3
-  } else if (effectiveVar < 1.8) {
-    rawCount = 3 + (effectiveVar - 1.0) / 0.8;    // Interpolate 3→4
-  } else if (effectiveVar < 3.0) {
-    rawCount = 4 + (effectiveVar - 1.8) / 1.2;    // Interpolate 4→5
+  } else if (effectiveVar < t.thresholdTwo) {
+    rawCount = 1 + (effectiveVar - t.thresholdOne) / (t.thresholdTwo - t.thresholdOne);
+  } else if (effectiveVar < t.thresholdThree) {
+    rawCount = 2 + (effectiveVar - t.thresholdTwo) / (t.thresholdThree - t.thresholdTwo);
+  } else if (effectiveVar < t.thresholdFour) {
+    rawCount = 3 + (effectiveVar - t.thresholdThree) / (t.thresholdFour - t.thresholdThree);
+  } else if (effectiveVar < t.thresholdFive) {
+    rawCount = 4 + (effectiveVar - t.thresholdFour) / (t.thresholdFive - t.thresholdFour);
   } else {
-    rawCount = Math.min(7, 5 + (effectiveVar - 3.0) / 2);
+    rawCount = Math.min(7, 5 + (effectiveVar - t.thresholdFive) / 2);
   }
 
   // Boost from subcarrier decorrelation (multiple people in different positions)
@@ -623,8 +711,8 @@ function estimatePersonCount(node) {
   // if node 36:24 blendedVar spikes above ~0.51 for 15+ continuous seconds, a false count
   // increment is possible — monitor in next run.
   // Scale 0.35 preserved: 0.22 → 0, 0.57 → 1.0 person. Only activates when variance path = 0.
-  if (node.calibrated && rawCount === 0 && blendedVar > 0.22) {
-    rawCount = Math.min(1.0, (blendedVar - 0.22) / 0.35);
+  if (node.calibrated && rawCount === 0 && blendedVar > t.absoluteFloor) {
+    rawCount = Math.min(1.0, (blendedVar - t.absoluteFloor) / t.absoluteFloorScale);
   }
 
   node.rawPersonCount = rawCount;
@@ -637,12 +725,12 @@ function estimatePersonCount(node) {
   const medianCount = median(node.rawCountBuffer);
 
   // --- EMA smoothing on median-filtered count ---
-  node.emaPersonCount = emaUpdate(node.emaPersonCount, medianCount, EMA_PERSON_COUNT);
+  node.emaPersonCount = emaUpdate(node.emaPersonCount, medianCount, tuning.emaPersonCount);
 
   // Hysteresis: only update displayed count when EMA moves >0.4 from current
   const emaRounded = Math.round(node.emaPersonCount);
-  if (Math.abs(node.emaPersonCount - node.personCount) > 0.4 ||
-      (node.personCount === 0 && node.emaPersonCount > 0.3)) {
+  if (Math.abs(node.emaPersonCount - node.personCount) > t.hysteresisDown ||
+      (node.personCount === 0 && node.emaPersonCount > t.hysteresisUp)) {
     node.personCount = Math.max(0, Math.min(8, emaRounded));
   }
 }
@@ -669,14 +757,14 @@ function estimateVitalSigns(node) {
       const { freq, confidence } = estimateFrequencyAutocorr(filtered, sr, 0.20, 0.5);
       if (freq > 0 && confidence > 0.2) {
         const bpm = freq * 60;
-        node.emaBreathingRate = emaUpdate(node.emaBreathingRate, bpm, EMA_BREATHING);
+        node.emaBreathingRate = emaUpdate(node.emaBreathingRate, bpm, tuning.emaBreathing);
         node.breathingRate = Math.round(node.emaBreathingRate);
       } else if (node.emaBreathingRate > 0) {
         // v2.16: decay stale breathing rate when autocorrelation fails confidence gate.
         //        Without decay, the last detected value persists indefinitely while
         //        the personCount EMA is still above the zero-out threshold (0.45).
-        //        Decay alpha = EMA_BREATHING * 0.05 ≈ 0.004 → ~70s half-life at 25Hz.
-        node.emaBreathingRate = emaUpdate(node.emaBreathingRate, 0, EMA_BREATHING * 0.05);
+        //        Decay alpha = tuning.emaBreathing * 0.05 ≈ 0.004 → ~70s half-life at 25Hz.
+        node.emaBreathingRate = emaUpdate(node.emaBreathingRate, 0, tuning.emaBreathing * 0.05);
         // v2.20: raised zero-out threshold 3→10 — observed BR=10-11 band-edge decay
         //        artifact on node 36:24 (autocorrelation intermittently detects at
         //        band-edge 12 bpm then fails confidence, EMA decays to 10-11).
@@ -705,15 +793,15 @@ function estimateVitalSigns(node) {
       //        Higher confidence filters marginal detections near search-band edges.
       if (freq > 0 && confidence > 0.40) {
         const bpm = freq * 60;
-        node.emaHeartRate = emaUpdate(node.emaHeartRate, bpm, EMA_HEART_RATE);
+        node.emaHeartRate = emaUpdate(node.emaHeartRate, bpm, tuning.emaHeartRate);
         node.heartRate = Math.round(node.emaHeartRate);
       } else if (node.emaHeartRate > 0) {
         // v2.16: decay stale heart rate when autocorrelation fails confidence gate.
         //        Observed HR=74 stuck across 15s on node f1:a4 while rawPersonCount
         //        dropped to 0 and effectiveVar=0 — the EMA personCount was still 3.4
         //        so the zero-out gate at line 650 didn't trigger.
-        //        Decay alpha = EMA_HEART_RATE * 0.05 ≈ 0.006 → ~46s half-life at 25Hz.
-        node.emaHeartRate = emaUpdate(node.emaHeartRate, 0, EMA_HEART_RATE * 0.05);
+        //        Decay alpha = tuning.emaHeartRate * 0.05 ≈ 0.006 → ~46s half-life at 25Hz.
+        node.emaHeartRate = emaUpdate(node.emaHeartRate, 0, tuning.emaHeartRate * 0.05);
         // v2.18: raised zero-out threshold 5→40 — observed HR=6 phantom on node
         //        36:24 during EMA decay (ema=5.5, round→6). Since autocorrelation
         //        search band minimum is 50 bpm, any ema<40 is a decay artifact.
@@ -785,19 +873,16 @@ function processFrame(frame) {
 
   // --- Motion Detection (with EMA) ---
   const recentVariance = mean(node.varianceHistory);
-  node.emaMotionLevel = emaUpdate(node.emaMotionLevel, recentVariance, EMA_MOTION);
+  node.emaMotionLevel = emaUpdate(node.emaMotionLevel, recentVariance, tuning.emaMotion);
   node.motionLevel = node.emaMotionLevel;
 
   // v2.10: raised thresholds — ambient cross-subcarrier variance in an
   // empty room is 66-154 (node-dependent); old values (5/1) caused perpetual "moving" state.
   // New values sit above observed ambient so "none" is the idle state and
   // real human activity pushes the metric above stationary/moving limits.
-  const motionThreshold = 180;  // v2.12: raised from 160 — node2 ambient is ~161
-  const stationaryThreshold = 170;  // v2.12: raised from 140 — keeps headroom above node2 ambient
-
-  if (node.emaMotionLevel > motionThreshold) {
+  if (node.emaMotionLevel > tuning.motionThreshold) {
     node.motionState = 'moving';
-  } else if (node.emaMotionLevel > stationaryThreshold) {
+  } else if (node.emaMotionLevel > tuning.stationaryThreshold) {
     node.motionState = 'stationary';
   } else {
     node.motionState = 'none';
@@ -833,7 +918,7 @@ function processFrame(frame) {
   //        56:5c with personCount=0 but ema=0.40 (inflated by transient noise
   //        spike rawPersonCount=2.63). 0.45 is still below the hysteresis
   //        flip-to-1 at ema≥0.5, so vitals appear during genuine arrivals.
-  if (node.personCount === 0 && node.emaPersonCount < 0.45) {
+  if (node.personCount === 0 && node.emaPersonCount < tuning.vitalGateThreshold) {
     node.heartRate = 0;
     node.breathingRate = 0;
   }
@@ -901,7 +986,7 @@ function fusePersonCount(activeNodes) {
   const fusedRaw = weightedSum / totalWeight;
 
   // Bias toward quieter (more reliable) nodes' max count
-  const quietNodes = candidates.filter(n => (n.noiseLevel || 0.1) < 2.0);
+  const quietNodes = candidates.filter(n => (n.noiseLevel || 0.1) < tuning.fusionQuietThreshold);
   let quietRef;
   if (quietNodes.length > 0) {
     // Quiet nodes exist — trust the max among them
@@ -916,7 +1001,7 @@ function fusePersonCount(activeNodes) {
   }
 
   // Blend: favor the quiet-node reference slightly
-  return Math.round(0.5 * fusedRaw + 0.5 * quietRef);
+  return Math.round(tuning.fusionQuietWeight * quietRef + (1 - tuning.fusionQuietWeight) * fusedRaw);
 }
 
 // ---------------------------------------------------------------------------
@@ -1025,6 +1110,24 @@ const httpServer = http.createServer((req, res) => {
     }));
     res.writeHead(200, { 'Content-Type': 'application/json' });
     res.end(JSON.stringify({ nodes: nodeList }));
+
+  } else if (req.url.startsWith('/api/nodes/identify')) {
+    // Node identification — returns the 1-based index for a given MAC.
+    // Called by ESP32 firmware on boot to learn its display number.
+    // GET /api/nodes/identify?mac=aa:bb:cc:dd:ee:ff
+    const params = new URL(req.url, 'http://localhost').searchParams;
+    const mac = (params.get('mac') || '').toLowerCase();
+    // Build ordered list of all known nodes sorted by first-seen time
+    const allNodes = [...nodes.values()].sort((a, b) => (a.firstSeen || 0) - (b.firstSeen || 0));
+    const idx = allNodes.findIndex(n => n.mac.toLowerCase() === mac);
+    const index = idx >= 0 ? idx + 1 : 0;
+    if (index > 0) {
+      console.log(`[NodeID] Node ${mac} identified as #${index}`);
+    } else {
+      console.log(`[NodeID] Unknown MAC ${mac} — returning index 0`);
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json', 'Access-Control-Allow-Origin': '*' });
+    res.end(JSON.stringify({ index, mac }));
 
   } else if (req.url === '/api/calibrate') {
     // Force re-calibration of all nodes
@@ -1156,6 +1259,83 @@ const httpServer = http.createServer((req, res) => {
     }, 200);  // 5 Hz update rate for smooth visualization
 
     req.on('close', () => clearInterval(interval));
+
+  } else if (req.url === '/api/tuning' && req.method === 'GET') {
+    // Return all live-tunable parameters
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(tuning));
+
+  } else if (req.url === '/api/tuning' && req.method === 'PUT') {
+    // Merge partial updates into tuning config (live, no restart needed)
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const updates = JSON.parse(body);
+        let changed = 0;
+        for (const [key, val] of Object.entries(updates)) {
+          if (key in tuning && typeof val === 'number' && isFinite(val)) {
+            tuning[key] = val;
+            changed++;
+          }
+        }
+        console.log(`[Tuning] Updated ${changed} parameters:`, Object.keys(updates).join(', '));
+        saveTuningToDisk(); // Persist to disk so settings survive restart
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ ok: true, changed, tuning }));
+      } catch (e) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON: ' + e.message }));
+      }
+    });
+
+  } else if (req.url === '/api/tuning/presets' && req.method === 'GET') {
+    // List saved tuning presets (tuning-*.json files in data/)
+    try {
+      const files = readdirSync(DATA_DIR).filter(f => f.startsWith('tuning-') && f.endsWith('.json'));
+      const presets = files.map(f => {
+        try {
+          const raw = JSON.parse(readFileSync(join(DATA_DIR, f), 'utf-8'));
+          return { file: f, version: raw.version || f, description: raw.description || '', date: raw.date || raw.savedAt || '' };
+        } catch { return { file: f, version: f, description: 'parse error' }; }
+      });
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify(presets));
+    } catch (e) {
+      res.writeHead(500, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+
+  } else if (req.url?.startsWith('/api/tuning/restore/') && req.method === 'PUT') {
+    // Restore a saved preset: PUT /api/tuning/restore/tuning-v1.json
+    const filename = decodeURIComponent(req.url.split('/').pop());
+    const presetPath = join(DATA_DIR, filename);
+    try {
+      if (!existsSync(presetPath)) throw new Error(`Preset not found: ${filename}`);
+      const raw = JSON.parse(readFileSync(presetPath, 'utf-8'));
+      const preset = raw.tuning || raw;
+      let restored = 0;
+      for (const [key, val] of Object.entries(preset)) {
+        if (key in tuning && typeof val === 'number' && isFinite(val)) {
+          tuning[key] = val;
+          restored++;
+        }
+      }
+      saveTuningToDisk();
+      console.log(`[Tuning] Restored ${restored} params from preset ${filename}`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ ok: true, restored, preset: filename, tuning }));
+    } catch (e) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: e.message }));
+    }
+
+  } else if (req.url === '/api/tuning' && req.method === 'OPTIONS') {
+    res.writeHead(204, {
+      'Access-Control-Allow-Methods': 'GET, PUT, OPTIONS',
+      'Access-Control-Allow-Headers': 'Content-Type',
+    });
+    res.end();
 
   } else {
     res.writeHead(404);

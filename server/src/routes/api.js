@@ -112,7 +112,7 @@ export function createApiRouter(services) {
     res.json({ ok: true, position: { x: nx, y: ny } });
   });
 
-  /** GET /api/room-layout — All node positions + room config */
+  /** GET /api/room-layout — All node positions + room config + zones */
   router.get('/room-layout', (_req, res) => {
     const state = loadState();
     const nodes = discovery.getNodes();
@@ -131,11 +131,45 @@ export function createApiRouter(services) {
 
     res.json({
       nodes: layout,
+      zones: state.zones || [],
       room: {
         width: config.display.width,
         height: config.display.height,
       },
     });
+  });
+
+  // ── Zones (room layout regions) ──
+
+  /** GET /api/zones — List all defined zones */
+  router.get('/zones', (_req, res) => {
+    const state = loadState();
+    res.json(state.zones || []);
+  });
+
+  /**
+   * PUT /api/zones — Replace all zones at once.
+   * Body: array of { id, name, x, y, w, h } (all coordinates normalized 0-1)
+   */
+  router.put('/zones', (req, res) => {
+    const zones = req.body;
+    if (!Array.isArray(zones)) {
+      return res.status(400).json({ error: 'Body must be an array of zone objects' });
+    }
+    // Validate & clamp each zone
+    const clean = zones.map((z, i) => ({
+      id: z.id || `zone-${i}`,
+      name: String(z.name || `Zone ${i + 1}`),
+      x: Math.max(0, Math.min(1, Number(z.x) || 0)),
+      y: Math.max(0, Math.min(1, Number(z.y) || 0)),
+      w: Math.max(0.05, Math.min(1, Number(z.w) || 0.3)),
+      h: Math.max(0.05, Math.min(1, Number(z.h) || 0.3)),
+    }));
+    const state = loadState();
+    state.zones = clean;
+    saveState(state);
+    log.info({ count: clean.length }, 'Zones updated');
+    res.json({ ok: true, zones: clean });
   });
 
   // -------------------------------------------------------------------------
@@ -372,6 +406,61 @@ export function createApiRouter(services) {
       hasFloorplan: existsSync(FLOORPLAN_PATH),
     });
   });
+
+  // -------------------------------------------------------------------------
+  // CSI Bridge tuning proxy (live-adjust detection thresholds)
+  // -------------------------------------------------------------------------
+  // The CSI bridge runs on port 3000 and exposes GET/PUT /api/tuning.
+  // This proxy lets the admin UI on :8080 reach it transparently.
+  router.all('/tuning', asyncHandler(async (req, res) => {
+    const bridgeBase = config.sensing.baseUrl || 'http://localhost:3000';
+    const url = `${bridgeBase}/api/tuning`;
+
+    try {
+      const upstreamRes = await fetch(url, {
+        method: req.method,
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: ['PUT', 'POST', 'PATCH'].includes(req.method)
+          ? JSON.stringify(req.body)
+          : undefined,
+        signal: AbortSignal.timeout(5000),
+      });
+
+      const data = await upstreamRes.json();
+      res.status(upstreamRes.status).json(data);
+    } catch (err) {
+      res.status(502).json({ error: 'CSI bridge unavailable', detail: err.message });
+    }
+  }));
+
+  // Tuning presets proxy
+  router.get('/tuning/presets', asyncHandler(async (_req, res) => {
+    const bridgeBase = config.sensing.baseUrl || 'http://localhost:3000';
+    try {
+      const upstreamRes = await fetch(`${bridgeBase}/api/tuning/presets`, { signal: AbortSignal.timeout(5000) });
+      const data = await upstreamRes.json();
+      res.json(data);
+    } catch (err) {
+      res.status(502).json({ error: 'CSI bridge unavailable', detail: err.message });
+    }
+  }));
+
+  router.put('/tuning/restore/:filename', asyncHandler(async (req, res) => {
+    const bridgeBase = config.sensing.baseUrl || 'http://localhost:3000';
+    try {
+      const upstreamRes = await fetch(`${bridgeBase}/api/tuning/restore/${encodeURIComponent(req.params.filename)}`, {
+        method: 'PUT',
+        signal: AbortSignal.timeout(5000),
+      });
+      const data = await upstreamRes.json();
+      res.status(upstreamRes.status).json(data);
+    } catch (err) {
+      res.status(502).json({ error: 'CSI bridge unavailable', detail: err.message });
+    }
+  }));
 
   // -------------------------------------------------------------------------
   // Sensing server proxy (pass-through to upstream RuView)

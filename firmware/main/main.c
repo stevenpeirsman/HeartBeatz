@@ -52,6 +52,7 @@
 #include "udp_sender.h"
 #include "led_status.h"
 #include "radar_ld2410s.h"
+#include "node_id.h"
 
 /* ---------------------------------------------------------------------------
  * Constants
@@ -70,12 +71,14 @@ static const char *TAG = "heartbeatz";
 #define RADAR_TASK_STACK   4096
 #define LED_TASK_STACK     2048
 #define OTA_TASK_STACK     8192
+#define NODE_ID_TASK_STACK 4096
 
 /** Task priorities (higher number = higher priority). */
 #define CSI_TASK_PRIO      10   /* Highest — real-time CSI streaming */
 #define RADAR_TASK_PRIO     8   /* High — UART must not overflow */
 #define LED_TASK_PRIO       2   /* Low — cosmetic only */
 #define OTA_TASK_PRIO       3   /* Low — runs periodically */
+#define NODE_ID_TASK_PRIO   2   /* Low — cosmetic LED blink */
 
 /* ---------------------------------------------------------------------------
  * Globals
@@ -213,6 +216,10 @@ void app_main(void)
 
     /* OTA update check task */
     xTaskCreate(ota_check_task, "ota_task", OTA_TASK_STACK, NULL, OTA_TASK_PRIO, NULL);
+
+    /* Node identification LED blink task */
+    xTaskCreate(node_id_task, "node_id", NODE_ID_TASK_STACK,
+                (void *)s_config.server_ip, NODE_ID_TASK_PRIO, NULL);
 
     ESP_LOGI(TAG, "All tasks launched — node operational");
     led_status_set(LED_STATE_STREAMING);

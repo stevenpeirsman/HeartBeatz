@@ -1,10 +1,36 @@
 {
-  "nodes": {},
+  "nodes": {
+    "ac:a7:04:ee:56:5c": {
+      "position": {
+        "x": 0.25216450216450215,
+        "y": 0.13349514563106796
+      },
+      "name": "desk"
+    },
+    "ac:a7:04:ee:36:24": {
+      "position": {
+        "x": 0.22023809523809523,
+        "y": 1
+      }
+    },
+    "ac:a7:04:ee:19:68": {
+      "position": {
+        "x": 0.2196969696969697,
+        "y": 0.9781553398058253
+      }
+    },
+    "ac:a7:04:ed:f1:a4": {
+      "position": {
+        "x": 0.23160173160173161,
+        "y": 0.1553398058252427
+      }
+    }
+  },
   "calibration": {
-    "startedAt": 1774761298054,
+    "startedAt": 1775047310708,
     "status": "complete",
-    "nodeCount": 3,
-    "completedAt": 1774761308057
+    "nodeCount": 2,
+    "completedAt": 1775047320711
   },
   "firstRunComplete": true
 }

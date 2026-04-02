@@ -94,11 +94,7 @@
       <canvas id="roomCanvas" width="640" height="480"></canvas>
       <!-- Room map controls (top-left overlay) -->
       <div class="map-controls" id="mapControls">
-        <button class="map-ctrl-btn" id="btnMapEdit" title="Edit node positions">
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
-            <path d="M10 1.5l2.5 2.5M1.5 12.5l.5-2.5L10 2l2 2-8 8-2.5.5z"/>
-          </svg>
-        </button>
+        <!-- Edit mode removed — nodes are always draggable -->
         <button class="map-ctrl-btn" id="btnMapReset" title="Reset node positions">
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.5">
             <path d="M1.5 7A5.5 5.5 0 017 1.5M12.5 7A5.5 5.5 0 017 12.5M1.5 7l2-2m-2 2l2 2M12.5 7l-2-2m2 2l-2 2"/>
@@ -111,8 +107,7 @@
           </svg>
         </button>
       </div>
-      <!-- Edit mode indicator -->
-      <div class="map-edit-badge hidden" id="mapEditBadge">EDIT MODE</div>
+      <!-- Edit mode removed — nodes always draggable -->
       <!-- Demo alert (e.g. fall detection) — hidden by default -->
       <div id="demoAlert" class="demo-alert hidden">
         <div class="demo-alert-icon">⚠️</div>
@@ -206,6 +201,41 @@
     </div>
   </div>
 
+  <!-- Person Detail Panel (slides up from bottom when a person is tapped) -->
+  <div id="personDetail" class="person-detail hidden">
+    <div class="person-detail-header">
+      <div class="person-detail-dot"></div>
+      <span class="person-detail-name" id="personDetailName">Person 1</span>
+      <button class="person-detail-close" id="btnClosePersonDetail">&times;</button>
+    </div>
+    <div class="person-detail-grid">
+      <div class="person-detail-item">
+        <div class="person-detail-value" id="pdHeartRate">--</div>
+        <div class="person-detail-label">Heart Rate</div>
+      </div>
+      <div class="person-detail-item">
+        <div class="person-detail-value" id="pdBreathingRate">--</div>
+        <div class="person-detail-label">Breathing</div>
+      </div>
+      <div class="person-detail-item">
+        <div class="person-detail-value" id="pdMotion">--</div>
+        <div class="person-detail-label">Motion</div>
+      </div>
+      <div class="person-detail-item">
+        <div class="person-detail-value" id="pdConfidence">--</div>
+        <div class="person-detail-label">Confidence</div>
+      </div>
+      <div class="person-detail-item">
+        <div class="person-detail-value" id="pdZone">--</div>
+        <div class="person-detail-label">Zone</div>
+      </div>
+      <div class="person-detail-item">
+        <div class="person-detail-value" id="pdDetectedBy">--</div>
+        <div class="person-detail-label">Detected By</div>
+      </div>
+    </div>
+  </div>
+
   <!-- Bottom: view switcher -->
   <div class="dash-bottom">
     <button class="tab-btn active" data-view="viewMap">Room Map</button>
@@ -234,11 +264,54 @@
       <label>mmWave Radar</label>
       <div class="setting-value" id="settingRadar">-</div>
     </div>
+    <!-- Node list with inline rename -->
+    <div class="settings-group" style="flex-direction:column;align-items:stretch">
+      <label style="margin-bottom:6px">Nodes</label>
+      <div id="settingsNodeList" class="settings-node-list">
+        <!-- populated dynamically -->
+      </div>
+    </div>
     <div class="settings-actions">
-      <button class="btn btn-primary" id="btnSetupFloorplan">Setup Floor Plan</button>
-      <button class="btn btn-primary" id="btnOpenOta">Firmware Update</button>
-      <button class="btn btn-accent" id="btnRecalibrate">Re-calibrate Room</button>
+      <button class="btn btn-primary" id="btnSetupFloorplan">Floor Plan</button>
+      <button class="btn btn-primary" id="btnOpenOta">Firmware</button>
+      <button class="btn btn-primary" id="btnOpenTuning">Detection Tuning</button>
+      <button class="btn btn-accent" id="btnRecalibrate">Re-calibrate</button>
       <button class="btn btn-muted" id="btnCloseSettings">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========================== ZONE EDITOR OVERLAY ========================== -->
+<div id="zoneEditor" class="overlay">
+  <div class="overlay-card overlay-card-wide">
+    <h2>Edit Zones</h2>
+    <p class="zone-editor-hint">Define the zones in your room. Each zone has a name and position on the map (all values 0-100%).</p>
+    <div id="zoneList" class="zone-list">
+      <!-- dynamically populated -->
+    </div>
+    <div class="zone-editor-actions">
+      <button class="btn btn-primary" id="btnAddZone">+ Add Zone</button>
+      <button class="btn btn-accent" id="btnSaveZones">Save</button>
+      <button class="btn btn-muted" id="btnCloseZoneEditor">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- ========================== DETECTION TUNING OVERLAY ========================== -->
+<div id="tuningOverlay" class="overlay">
+  <div class="overlay-card overlay-card-wide tuning-card">
+    <h2>Detection Tuning</h2>
+    <p class="tuning-hint">Adjust live detection parameters. Changes apply instantly — no restart needed.</p>
+    <div class="tuning-preset-row">
+      <select id="tuningPresetSelect" class="tuning-preset-select"><option value="">-- Load Preset --</option></select>
+    </div>
+    <div id="tuningStatus" class="tuning-status"></div>
+    <div id="tuningSliders" class="tuning-sliders">
+      <!-- Populated dynamically by app.js -->
+    </div>
+    <div class="settings-actions">
+      <button class="btn btn-accent" id="btnResetTuning">Reset Defaults</button>
+      <button class="btn btn-muted" id="btnCloseTuning">Close</button>
     </div>
   </div>
 </div>
